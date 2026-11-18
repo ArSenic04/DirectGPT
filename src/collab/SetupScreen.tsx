@@ -14,13 +14,19 @@ import { sanitizeId } from '../../shared/room';
 import { DEFAULT_MODEL, sessionSearch, type SessionParams } from './params';
 import { useSettings } from './settings';
 
+function suggestSession(): string {
+  return `s-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function suggestPid(): string {
   return `u-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function SetupScreen({ initial }: { initial: URLSearchParams }) {
   const settings = useSettings();
-  const [session, setSession] = useState(initial.get('session') ?? 'pair01');
+  // A new session gets a fresh id, so it never lands in an earlier session's room by accident.
+  // (For the pair study, type pairNN to get the counterbalanced order.)
+  const [session, setSession] = useState(() => initial.get('session') ?? suggestSession());
   // Every joiner gets their own participant id: suggest a fresh one unless the link carries one.
   const [pid, setPid] = useState(() => initial.get('pid') ?? suggestPid());
   const [name, setName] = useState(initial.get('name') ?? '');

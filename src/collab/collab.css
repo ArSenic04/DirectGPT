@@ -217,3 +217,4 @@
 .cdg-role { margin: 10px 0 4px; }
 .cdg-invite { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
 .cdg-invite .cdg-code { display: block; margin-top: 6px; word-break: break-all; }
+a.cdg-btn { text-decoration: none; display: inline-block; }

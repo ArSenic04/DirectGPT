@@ -211,6 +211,12 @@ on the same Wi-Fi open the LAN address. They need nothing but a browser. `npm ru
 the network (port 5173). Set `HOST=127.0.0.1` to restrict the server to your own machine. Campus networks such as
 eduroam often block connections between laptops; a home network or phone hotspot works.
 
+**Who is online** is exactly who is connected to that room right now. The server ties each person's presence to their
+connection: closing, reloading or leaving a tab (or the *Leave* button) removes them within a fraction of a second, and
+a computer that crashes, sleeps or loses its network is dropped after about 5 seconds (2.5-second heartbeat). The
+"who joined" list (used for colours and the export) is kept, but it is never shown as online. A new session from the
+setup screen gets a fresh session id, so it never lands in an earlier session's room by accident.
+
 **Roles in study tasks:** A and B have their own three items each (the pair protocol). Extra participants (role C, D, …
 or no role) are labelled *Extra editor* and see every item, so they can help with any of them. In Sandbox there are no
 roles or items.
@@ -288,8 +294,8 @@ to the document in these cases. The key is never written to logs, exports, the r
 ## Tests
 
 ```bash
-npm test             # 97 unit tests (Vitest)
-npm run test:e2e     # 8 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
+npm test             # 102 unit tests (Vitest)
+npm run test:e2e     # 11 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
 ```
 
 - **Unit tests** (`tests/`) cover:
@@ -311,6 +317,11 @@ npm run test:e2e     # 8 end-to-end tests (Playwright, Chromium, 2 to 11 isolate
   6. Four users (A, B, and extra editors C and D): presence and distinct colours for all, role-based items, live sync of typing, an AI edit by C that the others see pending and C accepts, synced to all four, attribution in everyone's history, a conflict between C and D resolved on the current text, and a 4-participant export.
   7. Five users in Sandbox (no roles), then a sixth who joins through the shared invite link (setup screen, fresh id, own name), plus the study-role options on the setup screen.
   8. Ten users typing at the same time end with identical text, and a reused participant id is flagged.
+
+  `e2e/presence.spec.ts` (who is online):
+  9. Closing a window removes that person from everyone's online list within 1.5 s; a reload never leaves a duplicate.
+  10. A new session shows only the people connected to it, whether it is joined from a fresh page, after *Leave* in the same tab, or by changing the link in the address bar.
+  11. The same checks with several tabs of one browser (which share storage).
 
   Every e2e test also fails if the browser logs any console error or uncaught exception.
 

@@ -535,6 +535,9 @@ export function Workspace({ conn, params, me, task, room }: Props) {
         </div>
         <PresenceBar states={presence} />
         <div className="cdg-header-right">
+          <a href="#/collab" className="cdg-btn cdg-btn-small" data-testid="leave-session" title="Leave this session and go back to setup">
+            Leave
+          </a>
           <span className={`cdg-conn cdg-conn-${conn.status}`} data-testid="connection" title={`Sync server: ${conn.status}`}>
             ● {conn.status === 'connected' ? 'Live' : conn.status}
           </span>

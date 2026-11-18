@@ -99,8 +99,24 @@ export function useCollabConnection(room: string, user: Participant): CollabConn
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/yjs`;
     // Connect on the next tick so React StrictMode's mount/unmount/mount in dev
     // does not open (and immediately abort) a throwaway socket.
-    const provider = new WebsocketProvider(wsUrl, room, doc, { connect: false });
+    // disableBc: presence comes only from the server, which owns each client's state by socket
+    // (otherwise same-browser tabs also exchange presence directly and can keep closed tabs alive).
+    const provider = new WebsocketProvider(wsUrl, room, doc, { connect: false, disableBc: true });
     const connectTimer = window.setTimeout(() => provider.connect(), 0);
+    // Leave the room's presence immediately when the tab closes, reloads, navigates away or goes into
+    // the back/forward cache; come back if the page is restored from that cache.
+    let savedState: Record<string, unknown> | null = null;
+    const onPageHide = () => {
+      savedState = provider.awareness.getLocalState();
+      provider.awareness.setLocalState(null);
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      if (savedState) provider.awareness.setLocalState(savedState);
+      if (!provider.wsconnected) provider.connect();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pageshow', onPageShow);
     const onStatus = ({ status: s }: { status: ConnectionStatus }) => setStatus(s);
     const onSync = (s: boolean) => setSynced(s);
     provider.on('status', onStatus);
@@ -108,6 +124,8 @@ export function useCollabConnection(room: string, user: Participant): CollabConn
     setConn({ doc, provider, parts: roomParts(doc) });
     return () => {
       window.clearTimeout(connectTimer);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
       provider.off('status', onStatus);
       provider.off('sync', onSync);
       provider.awareness.setLocalState(null);

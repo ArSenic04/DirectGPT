@@ -61,9 +61,6 @@ function Room({ params }: { params: SessionParams }) {
     conn.parts.participants.observe(update);
     return () => conn.parts.participants.unobserve(update);
   }, [conn, everSynced, params.pid, params.name, params.role]);
-  useEffect(() => {
-    setEverSynced(false);
-  }, [room]);
 
   if (!conn || !everSynced || joinIndex < 0) {
     return (
@@ -96,5 +93,8 @@ export default function CollabApp() {
     }
   }, [params, setProvider, setModel]);
 
-  return <ErrorBoundary>{params ? <Room params={params} /> : <SetupScreen initial={search} />}</ErrorBoundary>;
+  // Key the room by its name: joining another session in the same tab unmounts the old room completely
+  // (its socket, Y.Doc, presence and all component state) before the new one starts.
+  const roomKey = params ? roomName({ sessionId: params.session, task: params.task, condition: params.condition }) : null;
+  return <ErrorBoundary>{params ? <Room key={`${roomKey}|${params.pid}`} params={params} /> : <SetupScreen initial={search} />}</ErrorBoundary>;
 }
