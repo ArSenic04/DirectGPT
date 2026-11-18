@@ -4,7 +4,12 @@
  * used by the y-websocket client, plus:
  *  - seeding each study room with its task text exactly once (so two
  *    clients joining at the same time can never duplicate the document);
- *  - optional on-disk persistence of every room (crash recovery).
+ *  - optional on-disk persistence of every room (crash recovery);
+ *  - connection-owned presence: each awareness client id belongs to the
+ *    socket that introduced it and is removed the moment that socket closes
+ *    or stops answering pings. Echoes of other clients' states (y-websocket
+ *    clients re-broadcast every awareness change they receive) can never
+ *    claim or resurrect a state, so closed tabs never linger as "online".
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -21,13 +26,18 @@ import { seedRoom } from '../shared/ydoc';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
-const PING_INTERVAL_MS = 30_000;
+/** Heartbeat: a socket that misses one ping round is considered dead (crash, sleep, network drop). */
+export const PING_INTERVAL_MS = 2_500;
 
 export class SharedRoom {
   readonly doc = new Y.Doc();
   readonly awareness: awarenessProtocol.Awareness;
-  /** socket -> awareness client ids controlled by that socket */
+  /** socket -> awareness client ids owned by that socket */
   readonly conns = new Map<WebSocket, Set<number>>();
+  /** awareness client id -> owning socket */
+  private readonly owners = new Map<number, WebSocket>();
+  /** client id -> a new socket of the same client waiting to take over when the old socket dies */
+  private readonly pendingClaims = new Map<number, WebSocket>();
   private persistTimer: NodeJS.Timeout | null = null;
 
   constructor(readonly name: string, private readonly persistDir: string | null) {
@@ -46,13 +56,6 @@ export class SharedRoom {
 
     this.awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
       const changed = added.concat(updated, removed);
-      if (origin instanceof WebSocket) {
-        const controlled = this.conns.get(origin);
-        if (controlled) {
-          added.forEach((id) => controlled.add(id));
-          removed.forEach((id) => controlled.delete(id));
-        }
-      }
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
       encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
@@ -165,18 +168,93 @@ export class SharedRoom {
       syncProtocol.readSyncMessage(decoder, encoder, this.doc, conn);
       if (encoding.length(encoder) > 1) send(conn, encoding.toUint8Array(encoder));
     } else if (type === MESSAGE_AWARENESS) {
-      awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), conn);
+      const update = this.filterAwareness(conn, decoding.readVarUint8Array(decoder));
+      if (update) awarenessProtocol.applyAwarenessUpdate(this.awareness, update, conn);
     }
+  }
+
+  /**
+   * Keep only the entries of an awareness update that this socket is allowed
+   * to change: client ids it owns, or (for a socket that owns none yet) a new
+   * or previously disconnected client id, which it then claims. Entries about
+   * clients owned by another live socket are echoes and are dropped.
+   */
+  private filterAwareness(conn: WebSocket, update: Uint8Array): Uint8Array | null {
+    const owned = this.conns.get(conn);
+    if (!owned) return null;
+    const decoder = decoding.createDecoder(update);
+    const entries: Array<{ clientID: number; clock: number; state: string }> = [];
+    const count = decoding.readVarUint(decoder);
+    for (let i = 0; i < count; i++) {
+      const clientID = decoding.readVarUint(decoder);
+      const clock = decoding.readVarUint(decoder);
+      const state = decoding.readVarString(decoder);
+      const owner = this.owners.get(clientID);
+      const known = this.awareness.meta.get(clientID)?.clock ?? -1;
+      if (owner === conn) {
+        entries.push({ clientID, clock, state });
+      } else if (owner !== undefined && clock > known && state !== 'null') {
+        // Only the client itself can advance its clock: it reconnected on a new socket. Move ownership.
+        this.conns.get(owner)?.delete(clientID);
+        owned.add(clientID);
+        this.owners.set(clientID, conn);
+        this.pendingClaims.delete(clientID);
+        entries.push({ clientID, clock, state });
+      } else if (owner !== undefined && owned.size === 0 && state !== 'null') {
+        // Same client on a new socket while the old one is not yet known to be dead: take over when it dies.
+        this.pendingClaims.set(clientID, conn);
+      } else if (owner === undefined && owned.size === 0 && state !== 'null') {
+        owned.add(clientID);
+        this.owners.set(clientID, conn);
+        // A reconnecting client re-sends its state with the clock it had before the drop. Everyone already
+        // saw that clock (with a removal), so they would ignore it: advance the clock past what they know.
+        let next = clock;
+        const prev = this.awareness.meta.get(clientID);
+        if (prev && !this.awareness.states.has(clientID)) {
+          if (next <= prev.clock) next = prev.clock + 1;
+          this.awareness.meta.delete(clientID);
+        }
+        entries.push({ clientID, clock: next, state });
+      }
+    }
+    if (entries.length === 0) return null;
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, entries.length);
+    for (const e of entries) {
+      encoding.writeVarUint(encoder, e.clientID);
+      encoding.writeVarUint(encoder, e.clock);
+      encoding.writeVarString(encoder, e.state);
+    }
+    return encoding.toUint8Array(encoder);
+  }
+
+  /** Awareness client ids currently online in this room (for tests and diagnostics). */
+  onlineClients(): number[] {
+    return Array.from(this.awareness.getStates().keys());
   }
 
   private close(conn: WebSocket): void {
     const controlled = this.conns.get(conn);
     if (controlled) {
       this.conns.delete(conn);
-      awarenessProtocol.removeAwarenessStates(this.awareness, Array.from(controlled), null);
+      const gone: number[] = [];
+      for (const id of controlled) {
+        if (this.owners.get(id) !== conn) continue;
+        const claimant = this.pendingClaims.get(id);
+        this.pendingClaims.delete(id);
+        if (claimant && claimant !== conn && this.conns.has(claimant) && claimant.readyState === WebSocket.OPEN) {
+          this.owners.set(id, claimant);
+          this.conns.get(claimant)!.add(id);
+        } else {
+          this.owners.delete(id);
+          gone.push(id);
+        }
+      }
+      for (const [id, claimant] of this.pendingClaims) if (claimant === conn) this.pendingClaims.delete(id);
+      awarenessProtocol.removeAwarenessStates(this.awareness, gone, null);
     }
     try {
-      conn.close();
+      conn.terminate();
     } catch {
       /* already closed */
     }

@@ -6,7 +6,10 @@ import type { AddressInfo } from 'node:net';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { WebSocket } from 'ws';
+import * as awarenessProtocol from 'y-protocols/awareness';
+import * as encoding from 'lib0/encoding';
 import { createApp } from '../server/app';
+import { PING_INTERVAL_MS } from '../server/rooms';
 import { findTask } from '../shared/tasks';
 import { logEvent, roomParts } from '../shared/ydoc';
 
@@ -38,7 +41,7 @@ afterAll(async () => {
 
 function connect(room: string) {
   const doc = new Y.Doc();
-  const provider = new WebsocketProvider(wsBase, room, doc, { WebSocketPolyfill: WebSocket as unknown as typeof globalThis.WebSocket });
+  const provider = new WebsocketProvider(wsBase, room, doc, { WebSocketPolyfill: WebSocket as unknown as typeof globalThis.WebSocket, disableBc: true });
   providers.push(provider);
   const synced = new Promise<void>((resolve) => {
     if (provider.synced) resolve();
@@ -54,6 +57,128 @@ async function waitFor(check: () => boolean, ms = 3000) {
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+/** A raw socket that speaks just the awareness part of the protocol. */
+async function rawSocket(room: string, opts: { autoPong?: boolean } = {}): Promise<WebSocket> {
+  const ws = new WebSocket(`${wsBase}/${room}`, { autoPong: opts.autoPong ?? true });
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', () => resolve());
+    ws.once('error', reject);
+  });
+  return ws;
+}
+
+function awarenessMessage(aw: awarenessProtocol.Awareness): Uint8Array {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, 1);
+  encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(aw, [aw.clientID]));
+  return encoding.toUint8Array(enc);
+}
+
+const namesOnline = (p: WebsocketProvider) =>
+  Array.from(p.awareness.getStates().values())
+    .map((s) => (s as { user?: { name?: string } }).user?.name)
+    .filter(Boolean);
+
+describe('presence (awareness) on the server', () => {
+  it('removes a user the moment their socket closes', async () => {
+    const room = 'presence1.sandbox.direct';
+    const watcher = connect(room);
+    await watcher.synced;
+    const leaver = connect(room);
+    await leaver.synced;
+    leaver.provider.awareness.setLocalStateField('user', { name: 'Leaver' });
+    await waitFor(() => namesOnline(watcher.provider).includes('Leaver'));
+    const start = Date.now();
+    leaver.provider.shouldConnect = false; // no auto-reconnect: this simulates a closed tab
+    (leaver.provider.ws as unknown as WebSocket).terminate();
+    await waitFor(() => !namesOnline(watcher.provider).includes('Leaver'), 1000);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('a client that reconnects before its old socket is noticed as dead leaves no ghost when it closes', async () => {
+    const room = 'presence2.sandbox.direct';
+    const watcher = connect(room);
+    await watcher.synced;
+    const aw = new awarenessProtocol.Awareness(new Y.Doc());
+    aw.setLocalState({ user: { name: 'Ghost' } });
+    const oldSocket = await rawSocket(room); // e.g. a laptop that went to sleep: never closed
+    oldSocket.send(awarenessMessage(aw));
+    await waitFor(() => namesOnline(watcher.provider).includes('Ghost'));
+    const newSocket = await rawSocket(room); // the same client (same clientID) reconnects
+    aw.setLocalState({ user: { name: 'Ghost' }, again: true });
+    newSocket.send(awarenessMessage(aw));
+    await new Promise((r) => setTimeout(r, 100));
+    newSocket.close(); // and then closes its tab
+    await waitFor(() => !namesOnline(watcher.provider).includes('Ghost'), 1000);
+    oldSocket.terminate();
+    aw.destroy();
+  });
+
+  it('a client that reconnects after a network drop shows up at once, and disappears at once when it then closes', async () => {
+    const room = 'presence3.sandbox.direct';
+    const watcher = connect(room);
+    await watcher.synced;
+    const aw = new awarenessProtocol.Awareness(new Y.Doc());
+    aw.setLocalState({ user: { name: 'Roamer' } });
+    const first = await rawSocket(room);
+    first.send(awarenessMessage(aw));
+    await waitFor(() => namesOnline(watcher.provider).includes('Roamer'));
+    first.terminate(); // Wi-Fi blip
+    await waitFor(() => !namesOnline(watcher.provider).includes('Roamer'), 1000);
+    const second = await rawSocket(room); // y-websocket reconnects and re-sends the same state (same clock)
+    second.send(awarenessMessage(aw));
+    await waitFor(() => namesOnline(watcher.provider).includes('Roamer'), 1000);
+    second.close(); // tab closed
+    await waitFor(() => !namesOnline(watcher.provider).includes('Roamer'), 1000);
+    aw.destroy();
+  });
+
+  it('drops a client that stops answering pings (crash, sleep, network loss) within a few seconds', async () => {
+    const room = 'presence5.sandbox.direct';
+    const watcher = connect(room);
+    await watcher.synced;
+    const aw = new awarenessProtocol.Awareness(new Y.Doc());
+    aw.setLocalState({ user: { name: 'Frozen' } });
+    const socket = await rawSocket(room, { autoPong: false }); // its TCP connection is silently dead
+    socket.send(awarenessMessage(aw));
+    await waitFor(() => namesOnline(watcher.provider).includes('Frozen'));
+    const start = Date.now();
+    await waitFor(() => !namesOnline(watcher.provider).includes('Frozen'), 3 * PING_INTERVAL_MS);
+    expect(Date.now() - start).toBeLessThanOrEqual(2 * PING_INTERVAL_MS + 500);
+    socket.terminate();
+    aw.destroy();
+  }, 15_000);
+
+  it('ignores echoes: another client re-sending a departed user\'s state cannot bring it back', async () => {
+    const room = 'presence4.sandbox.direct';
+    const watcher = connect(room);
+    await watcher.synced;
+    watcher.provider.awareness.setLocalStateField('user', { name: 'Watcher' });
+    const leaver = new awarenessProtocol.Awareness(new Y.Doc());
+    leaver.setLocalState({ user: { name: 'Leaver' } });
+    const echoer = new awarenessProtocol.Awareness(new Y.Doc());
+    echoer.setLocalState({ user: { name: 'Echoer' } });
+    const leaverSocket = await rawSocket(room);
+    leaverSocket.send(awarenessMessage(leaver));
+    const echoSocket = await rawSocket(room);
+    echoSocket.send(awarenessMessage(echoer));
+    await waitFor(() => namesOnline(watcher.provider).includes('Leaver') && namesOnline(watcher.provider).includes('Echoer'));
+    leaverSocket.close();
+    await waitFor(() => !namesOnline(watcher.provider).includes('Leaver'), 1000);
+    // The echoer re-broadcasts the Leaver's last state, as y-websocket clients do with every update they receive.
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, 1);
+    encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(leaver, [leaver.clientID]));
+    echoSocket.send(encoding.toUint8Array(enc));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(namesOnline(watcher.provider)).not.toContain('Leaver');
+    expect(app.rooms.get(room).onlineClients()).not.toContain(leaver.clientID);
+    echoSocket.close();
+    leaver.destroy();
+    echoer.destroy();
+  });
+});
 
 describe('collaboration server', () => {
   it('seeds a study room once and syncs edits and presence between two clients', async () => {
