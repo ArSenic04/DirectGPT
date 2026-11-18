@@ -6,7 +6,8 @@ export interface UserOptions {
   condition: 'direct' | 'baseline';
   pid: string;
   name: string;
-  role: 'A' | 'B';
+  /** Study role (A, B, C, …); omit for no role. */
+  role?: string | null;
   provider?: 'mock' | 'openai';
 }
 
@@ -22,9 +23,10 @@ export function uniqueSession(prefix: string): string {
 }
 
 export function collabUrl(o: UserOptions): string {
-  const q = new URLSearchParams({
-    session: o.session, task: o.task, condition: o.condition, pid: o.pid, name: o.name, role: o.role, provider: o.provider ?? 'mock', model: 'gpt-4o',
-  });
+  const q = new URLSearchParams({ session: o.session, task: o.task, condition: o.condition, pid: o.pid, name: o.name });
+  if (o.role) q.set('role', o.role);
+  q.set('provider', o.provider ?? 'mock');
+  q.set('model', 'gpt-4o');
   return `/#/collab?${q.toString()}`;
 }
 

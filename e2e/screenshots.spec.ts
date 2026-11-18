@@ -118,3 +118,57 @@ test('capture documentation screenshots', async ({ browser }) => {
   await canvas.close();
   expectNoErrors(alice, bob, carol, dan);
 });
+
+/** Four screens in a 2 x 2 grid. */
+async function grid(page: Page, shots: Buffer[], captions: string[], name: string) {
+  const img = (b: Buffer) => `data:image/png;base64,${b.toString('base64')}`;
+  await page.setViewportSize({ width: 2900, height: 1900 });
+  const cell = (i: number) =>
+    `<figure style="margin:0"><figcaption style="color:#fff;font-size:22px;margin-bottom:8px">${captions[i]}</figcaption><img src="${img(shots[i])}" style="width:1420px;border-radius:8px"></figure>`;
+  await page.setContent(`<!doctype html><html><body style="margin:0;background:#1f2937;font-family:system-ui">
+    <div style="display:grid;grid-template-columns:1420px 1420px;gap:20px;padding:20px">${[0, 1, 2, 3].map(cell).join('')}</div></body></html>`);
+  await page.screenshot({ path: path.join(OUT, name), fullPage: true });
+}
+
+test('capture multi-user screenshot', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const session = uniqueSession('team');
+  const base = { session, task: 'T1', condition: 'direct' as const };
+  const people = [
+    await openUser(browser, { ...base, pid: 'P01', name: 'Alice', role: 'A' }),
+    await openUser(browser, { ...base, pid: 'P02', name: 'Bob', role: 'B' }),
+    await openUser(browser, { ...base, pid: 'P03', name: 'Carol', role: 'C' }),
+    await openUser(browser, { ...base, pid: 'P04', name: 'Dan', role: 'D' }),
+  ];
+  users = people;
+  const [alice, bob, carol, dan] = people;
+  for (const u of people) await u.page.setViewportSize({ width: 1440, height: 900 });
+  await alice.page.getByTestId('start-task').click();
+  // Dan (extra editor) shortens a sentence; it is accepted and synced.
+  await selectText(dan.page, target('T1-A1'));
+  await dan.page.getByTestId('cmd-shorten').click();
+  await dan.page.locator('[data-testid="preview-card"][data-status="pending"]').getByTestId('accept').click();
+  // Carol (extra editor) asks for a grammar fix on paragraph 3 and is reviewing it.
+  await selectText(carol.page, target('T1-A2'));
+  await carol.page.getByTestId('cmd-grammar').click();
+  await expect(carol.page.locator('[data-testid="preview-card"][data-status="pending"]')).toBeVisible();
+  // Bob types at the end of the first paragraph; Alice selects the last sentence.
+  await clickAfter(bob.page, 'clear the paths last month.');
+  await bob.page.keyboard.type(' Welcome, everyone!');
+  await alice.page.bringToFront();
+  await selectText(alice.page, target('T1-A3'));
+  await bob.page.getByTestId('tab-history').click();
+  for (const u of people) await expect.poll(() => u.page.getByTestId('presence-user').count()).toBe(4);
+  await carol.page.waitForTimeout(400);
+  const shots = [];
+  for (const u of people) shots.push(await u.page.screenshot());
+  const canvas = await alice.context.newPage();
+  await grid(canvas, shots, [
+    'Alice (partner A): selecting the last sentence',
+    'Bob (partner B): typing, with the shared history open',
+    'Carol (extra editor C): reviewing her AI grammar fix',
+    'Dan (extra editor D): his accepted AI edit is synced to everyone',
+  ], '07-four-users.png');
+  await canvas.close();
+  expectNoErrors(...people);
+});
