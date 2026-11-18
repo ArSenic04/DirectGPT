@@ -206,3 +206,14 @@
   .cdg-presence-act { display: none; }
 }
 .cdg-muted { color: var(--cdg-muted); font-size: 12px; margin: 4px 0; }
+/* Many collaborators */
+.cdg-presence { min-width: 0; max-width: 100%; }
+.cdg-presence-compact { gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.cdg-presence-compact .cdg-presence-user { gap: 4px; flex-shrink: 0; }
+.cdg-presence-compact .cdg-presence-name { font-size: 12px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdg-presence-count { font-size: 12px; color: var(--cdg-muted); flex-shrink: 0; margin-right: 2px; }
+.cdg-avatar-busy { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f59e0b; }
+.cdg-banner-warn { background: #fef3c7; color: #78350f; }
+.cdg-role { margin: 10px 0 4px; }
+.cdg-invite { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
+.cdg-invite .cdg-code { display: block; margin-top: 6px; word-break: break-all; }

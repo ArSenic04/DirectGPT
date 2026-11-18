@@ -4,6 +4,8 @@
  *
  * Environment variables:
  *   PORT              port to listen on (default 1234)
+ *   HOST              interface to bind (default: all interfaces, IPv4 and IPv6,
+ *                     so other computers on the LAN can join)
  *   OPENAI_API_KEY    optional server-side key for the OpenAI-compatible provider
  *   OPENAI_BASE_URL   OpenAI-compatible base URL (default https://api.openai.com/v1)
  *   OPENAI_MODEL      default model (default gpt-4o)
@@ -15,6 +17,7 @@
  * variables already set in the shell take precedence.
  */
 import { existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app';
@@ -40,10 +43,24 @@ const { server, rooms } = createApp({
   },
 });
 
-server.listen(port, () => {
+/** IPv4 addresses of this machine on the local network (for join links from other computers). */
+function lanAddresses(): string[] {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((a): a is NonNullable<typeof a> => !!a && a.family === 'IPv4' && !a.internal)
+    .map((a) => a.address);
+}
+
+const host = env('HOST');
+const onListening = () => {
   const key = env('OPENAI_API_KEY') ? 'server key configured' : 'no server key (use MOCK or enter a key in the UI)';
   console.log(`[collab-directgpt] server on http://localhost:${port}  (LLM: ${key})`);
-});
+  if (!host || host === '0.0.0.0' || host === '::') {
+    for (const ip of lanAddresses()) console.log(`[collab-directgpt] on your network: http://${ip}:${port}/#/collab`);
+  }
+};
+if (host) server.listen(port, host, onListening);
+else server.listen(port, onListening);
 
 const shutdown = () => {
   rooms.persistAll();

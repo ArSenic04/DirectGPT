@@ -16,6 +16,8 @@ export default defineConfig({
   server: {
     port: CLIENT_PORT,
     strictPort: true,
+    // Listen on all interfaces so collaborators on the same network can join the dev server too.
+    host: true,
     proxy: {
       '/api': `http://localhost:${SERVER_PORT}`,
       '/yjs': { target: `ws://localhost:${SERVER_PORT}`, ws: true },

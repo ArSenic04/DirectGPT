@@ -1,24 +1,34 @@
 /**
- * Session setup (study support): session/pair id, participant id, name,
- * partner role, condition and task, plus the LLM provider. Produces the URL
- * that both partners open; shows the counterbalanced order for the pair.
+ * Session setup: session id, participant id, name, optional study role,
+ * condition and task, plus the LLM provider. Any number of people can join
+ * the same session; the invite link can be shared with all of them and each
+ * joiner enters their own name and participant id. For the formal pair study
+ * the screen also shows the counterbalanced order.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { TASKS } from '../../shared/tasks';
+import { findTask, TASKS } from '../../shared/tasks';
+import { parseRole, ROLE_CHOICES, roleLabel } from '../../shared/roles';
 import { CONDITION_LABELS, type Condition } from '../../shared/types';
 import { orderForPair, pairNumberFromSession } from '../../shared/counterbalance';
 import { sanitizeId } from '../../shared/room';
 import { DEFAULT_MODEL, sessionSearch, type SessionParams } from './params';
 import { useSettings } from './settings';
 
+function suggestPid(): string {
+  return `u-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 export function SetupScreen({ initial }: { initial: URLSearchParams }) {
   const settings = useSettings();
   const [session, setSession] = useState(initial.get('session') ?? 'pair01');
-  const [pid, setPid] = useState(initial.get('pid') ?? '');
+  // Every joiner gets their own participant id: suggest a fresh one unless the link carries one.
+  const [pid, setPid] = useState(() => initial.get('pid') ?? suggestPid());
   const [name, setName] = useState(initial.get('name') ?? '');
-  const [role, setRole] = useState<'A' | 'B'>(initial.get('role') === 'B' ? 'B' : 'A');
+  const [role, setRole] = useState<string>(parseRole(initial.get('role')) ?? '');
   const [condition, setCondition] = useState<Condition>(initial.get('condition') === 'baseline' ? 'baseline' : 'direct');
-  const [task, setTask] = useState(initial.get('task') ?? 'practice');
+  const [task, setTask] = useState(findTask(initial.get('task') ?? '')?.id ?? 'practice');
+  const [copiedPair, setCopiedPair] = useState(false);
+  const hasRoles = (findTask(task)?.items.length ?? 0) > 0;
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -34,13 +44,26 @@ export function SetupScreen({ initial }: { initial: URLSearchParams }) {
   const valid = sanitizeId(session).length > 0 && sanitizeId(pid).length > 0 && name.trim().length > 0;
 
   const params: SessionParams = {
-    session: sanitizeId(session), task, condition, pid: sanitizeId(pid), name: name.trim(), role,
+    session: sanitizeId(session), task, condition, pid: sanitizeId(pid), name: name.trim(), role: hasRoles ? parseRole(role) : null,
     provider: settings.provider, model: settings.model || DEFAULT_MODEL,
   };
-  const partnerLink = useMemo(() => {
-    const q = new URLSearchParams({ session: params.session, task, condition, role: role === 'A' ? 'B' : 'A', provider: settings.provider, model: params.model });
+  // Invite link: session, task, condition and provider only; each joiner adds their own name and id.
+  const inviteLink = useMemo(() => {
+    const q = new URLSearchParams({ session: params.session, task, condition, provider: settings.provider, model: params.model });
     return `${window.location.origin}${window.location.pathname}#/collab?${q.toString()}`;
-  }, [params.session, params.model, task, condition, role, settings.provider]);
+  }, [params.session, params.model, task, condition, settings.provider]);
+  // Pair study: the other partner's link pre-selects the complementary role.
+  const pairRole = role === 'A' ? 'B' : role === 'B' ? 'A' : null;
+  const pairLink = pairRole ? `${inviteLink}&role=${pairRole}` : null;
+
+  const copy = async (text: string, done: (v: boolean) => void) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      done(true);
+    } catch {
+      done(false);
+    }
+  };
 
   const join = () => {
     if (!valid) return;
@@ -69,10 +92,12 @@ export function SetupScreen({ initial }: { initial: URLSearchParams }) {
             <input className="cdg-input" value={name} placeholder="Alice" onChange={(e) => setName(e.target.value)} data-testid="setup-name" />
           </label>
           <label className="cdg-field">
-            Partner role
-            <select value={role} onChange={(e) => setRole(e.target.value === 'B' ? 'B' : 'A')} data-testid="setup-role">
-              <option value="A">Partner A</option>
-              <option value="B">Partner B</option>
+            Study role {hasRoles ? '(optional)' : ''}
+            <select value={hasRoles ? role : ''} disabled={!hasRoles} onChange={(e) => setRole(e.target.value)} data-testid="setup-role">
+              <option value="">{hasRoles ? 'No role (sees all items)' : 'No roles in this task'}</option>
+              {hasRoles && ROLE_CHOICES.map((r) => (
+                <option key={r} value={r}>{roleLabel(r)}</option>
+              ))}
             </select>
           </label>
           <label className="cdg-field">
@@ -120,25 +145,26 @@ export function SetupScreen({ initial }: { initial: URLSearchParams }) {
           <button className="cdg-btn cdg-btn-primary" disabled={!valid} onClick={join} data-testid="setup-join">
             Join session
           </button>
-          <button
-            className="cdg-btn"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(partnerLink);
-                setCopied(true);
-              } catch {
-                setCopied(false);
-              }
-            }}
-          >
-            {copied ? 'Link copied ✓' : 'Copy link for partner'}
+          <button className="cdg-btn" onClick={() => void copy(inviteLink, setCopied)} data-testid="copy-invite">
+            {copied ? 'Link copied ✓' : 'Copy link for partners (anyone)'}
           </button>
         </div>
+        <div className="cdg-invite" data-testid="invite">
+          <strong>Invite anyone:</strong> share this link with as many people as you like. Each person opens it, types their own name and participant
+          ID, and joins the same document.
+          <code className="cdg-code" data-testid="invite-link">{inviteLink}</code>
+          {pairLink && (
+            <div className="cdg-small" style={{ marginTop: 8 }}>
+              Pair study: send your partner the link with <strong>role {pairRole}</strong> pre-selected{' '}
+              <button className="cdg-btn cdg-btn-small" onClick={() => void copy(pairLink, setCopiedPair)} data-testid="copy-pair-link">
+                {copiedPair ? 'Copied ✓' : `Copy partner ${pairRole} link`}
+              </button>
+            </div>
+          )}
+        </div>
         <p className="cdg-small cdg-muted">
-          Partner link (role {role === 'A' ? 'B' : 'A'}): <code className="cdg-code">{partnerLink}</code>
-        </p>
-        <p className="cdg-small cdg-muted">
-          Quick demo: open this page in two browser windows, use the same session ID and the “Sandbox” task, and give each window a different name.
+          Quick demo: open the invite link in several browser windows (or on other computers on the same network), give each window a different name,
+          and use the “Sandbox” task. Study roles only matter for the pair-study tasks: A and B have their own items, C and later letters are extra editors.
         </p>
         <p className="cdg-small"><a href="#/">← Original DirectGPT launcher</a></p>
       </div>

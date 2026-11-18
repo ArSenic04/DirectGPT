@@ -85,6 +85,7 @@ export function Workspace({ conn, params, me, task, room }: Props) {
   const questionnaires = useYSnapshot(parts.questionnaires as unknown as Y.AbstractType<unknown>, () => parts.questionnaires.toArray() as QuestionnaireResponse[]);
   const events = useYSnapshot(parts.events as unknown as Y.AbstractType<unknown>, () => parts.events.toArray() as LogEvent[]);
   const presence = usePresence(awareness);
+  const duplicatePid = presence.some((p) => !p.isLocal && p.user.participantId === me.participantId);
 
   const editorApi = useRef<EditorApi>(null);
   const undoManager = useMemo(() => new Y.UndoManager(parts.text), [parts.text]);
@@ -498,7 +499,7 @@ export function Workspace({ conn, params, me, task, room }: Props) {
 
   const onFinish = useCallback(() => {
     const pending = activeRequests.filter((r) => r.status !== 'failed').length;
-    const msg = pending > 0 ? `There are ${pending} AI suggestion(s) still open. Finish the task anyway?` : 'Finish the task for both partners?';
+    const msg = pending > 0 ? `There are ${pending} AI suggestion(s) still open. Finish the task anyway?` : 'Finish the task for everyone in this session?';
     if (!window.confirm(msg)) return;
     const startedAt = meta?.taskStartedAt;
     if (endTask(doc, me.participantId)) log('task_end', { durationSec: startedAt !== undefined ? Math.round((Date.now() - startedAt) / 100) / 10 : null });
@@ -548,6 +549,11 @@ export function Workspace({ conn, params, me, task, room }: Props) {
       </header>
       {conn.status !== 'connected' && (
         <div className="cdg-banner" role="status">Connection to the sync server lost. Reconnecting… Your edits are kept and will sync when the connection returns.</div>
+      )}
+      {duplicatePid && (
+        <div className="cdg-banner cdg-banner-warn" role="status" data-testid="duplicate-pid">
+          Someone else in this session is also using participant ID “{me.participantId}”. Each person should join with their own ID so edits and data are attributed correctly.
+        </div>
       )}
       <div className="cdg-main">
         <TaskPanel task={task} role={me.role} meta={meta} isStudyTask={isStudyTask} onStart={onStart} onFinish={onFinish} nameOf={nameOf} />

@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { findTask } from '../../shared/tasks';
 import { roomName } from '../../shared/room';
 import type { Participant } from '../../shared/types';
-import { colorFor, lighten, parseSessionParams, type SessionParams } from './params';
+import { lighten, parseSessionParams, type SessionParams } from './params';
+import { colorForId, colorForIndex } from '../../shared/colors';
+import { registerParticipant, rosterIndex } from '../../shared/ydoc';
 import { SetupScreen } from './SetupScreen';
 import { Workspace } from './Workspace';
 import { useCollabConnection } from './hooks';
@@ -39,20 +41,31 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 function Room({ params }: { params: SessionParams }) {
   const task = findTask(params.task)!;
   const room = roomName({ sessionId: params.session, task: params.task, condition: params.condition });
-  const me: Participant = useMemo(() => {
-    const color = colorFor(params.role, params.pid);
-    return { participantId: params.pid, name: params.name, color, colorLight: lighten(color), role: params.role };
-  }, [params.pid, params.name, params.role]);
+  // Colour = join order in the room roster, so every collaborator (any number) gets a distinct colour.
+  const [joinIndex, setJoinIndex] = useState(-1);
+  const color = joinIndex >= 0 ? colorForIndex(joinIndex) : colorForId(params.pid);
+  const me: Participant = useMemo(
+    () => ({ participantId: params.pid, name: params.name, color, colorLight: lighten(color), role: params.role }),
+    [params.pid, params.name, params.role, color],
+  );
   const conn = useCollabConnection(room, me);
   const [everSynced, setEverSynced] = useState(false);
   useEffect(() => {
     if (conn?.synced) setEverSynced(true);
   }, [conn?.synced]);
   useEffect(() => {
+    if (!conn || !everSynced) return;
+    registerParticipant(conn.doc, { participantId: params.pid, name: params.name, role: params.role });
+    const update = () => setJoinIndex(rosterIndex(conn.doc, params.pid));
+    update();
+    conn.parts.participants.observe(update);
+    return () => conn.parts.participants.unobserve(update);
+  }, [conn, everSynced, params.pid, params.name, params.role]);
+  useEffect(() => {
     setEverSynced(false);
   }, [room]);
 
-  if (!conn || !everSynced) {
+  if (!conn || !everSynced || joinIndex < 0) {
     return (
       <div className="cdg-setup-page">
         <div className="cdg-setup" data-testid="connecting">

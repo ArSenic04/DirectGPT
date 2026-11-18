@@ -1,11 +1,12 @@
-/** Task instructions for this partner, task start/finish and timer. */
+/** Task instructions for this participant's study role, task start/finish and timer. */
 import { useEffect, useState } from 'react';
 import type { TaskDefinition } from '../../../shared/tasks';
 import type { SessionMeta } from '../../../shared/types';
+import { isPairRole, itemsForRole, roleLabel } from '../../../shared/roles';
 
 interface Props {
   task: TaskDefinition;
-  role: 'A' | 'B';
+  role: string | null;
   meta: SessionMeta | null;
   isStudyTask: boolean;
   onStart: () => void;
@@ -33,8 +34,7 @@ export function TaskPanel({ task, role, meta, isStudyTask, onStart, onFinish, na
   const ended = meta?.taskEndedAt !== undefined;
   const now = useNow(started && !ended);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const mine = task.items.filter((i) => i.role === role);
-  const partner = task.items.filter((i) => i.role !== role);
+  const { mine, others } = itemsForRole(task, role);
   const elapsed = started ? (ended ? meta!.taskEndedAt! : now) - meta!.taskStartedAt! : 0;
 
   return (
@@ -55,10 +55,16 @@ export function TaskPanel({ task, role, meta, isStudyTask, onStart, onFinish, na
           )}
           {started && !ended && (
             <button className="cdg-btn cdg-btn-block" data-testid="finish-task" onClick={onFinish}>
-              ■ Finish task (both partners done)
+              ■ Finish task (everyone done)
             </button>
           )}
           {started && meta?.taskStartedBy && <div className="cdg-muted cdg-small">Started by {nameOf(meta.taskStartedBy)}{ended && meta.taskEndedBy ? `, finished by ${nameOf(meta.taskEndedBy)}` : ''}.</div>}
+        </div>
+      )}
+      {task.items.length > 0 && (
+        <div className="cdg-small cdg-role" data-testid="my-role">
+          You: <strong>{roleLabel(role)}</strong>
+          {!isPairRole(role) && <span className="cdg-muted"> · no assigned items; help with any item and coordinate with the others.</span>}
         </div>
       )}
       {mine.length > 0 && (
@@ -74,14 +80,18 @@ export function TaskPanel({ task, role, meta, isStudyTask, onStart, onFinish, na
               </li>
             ))}
           </ol>
-          <h3 className="cdg-task-sub">Your partner's items</h3>
-          <ul className="cdg-task-items cdg-muted">
-            {partner.map((i) => (
+        </>
+      )}
+      {others.map((group) => (
+        <div key={group.role} data-testid={`items-${group.role}`}>
+          <h3 className="cdg-task-sub">{mine.length > 0 ? "Your partner's items" : `Partner ${group.role}'s items`}</h3>
+          <ul className={`cdg-task-items ${mine.length > 0 ? 'cdg-muted' : ''}`}>
+            {group.items.map((i) => (
               <li key={i.id}>{i.instruction}</li>
             ))}
           </ul>
-        </>
-      )}
+        </div>
+      ))}
       {task.items.length === 0 && <p className="cdg-small">Free exploration: try selecting text and using the AI commands with a collaborator.</p>}
     </aside>
   );
