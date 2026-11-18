@@ -5,6 +5,7 @@
  *   npm run analyze -- path/a.json dir/   # specific files or folders
  *   npm run analyze -- --demo             # SYNTHETIC demo data, to try the pipeline
  *   npm run analyze -- --out some/dir     # output folder (default data/analysis)
+ *   npm run analyze -- --pair-roles-only  # participant measures: only study roles A and B
  *
  * Writes comparisons.csv, team.csv, participants.csv and report.md.
  */
@@ -31,12 +32,14 @@ function collect(paths: string[]): string[] {
 function main(argv: string[]): number {
   let out = 'data/analysis';
   let demo = false;
+  let pairRolesOnly = false;
   const inputs: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--out') out = argv[++i] ?? out;
     else if (argv[i] === '--demo') demo = true;
+    else if (argv[i] === '--pair-roles-only') pairRolesOnly = true;
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('usage: npm run analyze -- [--demo] [--out dir] [files or folders...]');
+      console.log('usage: npm run analyze -- [--demo] [--pair-roles-only] [--out dir] [files or folders...]');
       return 0;
     } else inputs.push(argv[i]);
   }
@@ -65,7 +68,7 @@ function main(argv: string[]): number {
     return 1;
   }
 
-  const result = analyze(exports);
+  const result = analyze(exports, { pairRolesOnly });
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'comparisons.csv'), comparisonsCsv(result.comparisons));
   writeFileSync(join(out, 'team.csv'), rowsCsv(result.team));

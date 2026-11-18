@@ -1,10 +1,10 @@
 /** Build the JSON/CSV export of a room (used by the server's export endpoint). */
 import * as Y from 'yjs';
-import { listRequests, readMeta, roomParts } from './ydoc';
+import { listRequests, listRoster, readMeta, roomParts } from './ydoc';
 import { summarizeSession, type SessionSummary } from './metrics';
 import { findTask, targetSpans } from './tasks';
 import { toCsv, type CsvValue } from './csv';
-import type { AIRequestRecord, LogEvent, QuestionnaireResponse, SessionMeta } from './types';
+import type { AIRequestRecord, LogEvent, QuestionnaireResponse, RosterEntry, SessionMeta } from './types';
 import { LIKERT_ITEMS, TLX_SCALES } from './questionnaire';
 
 export const EXPORT_SCHEMA = 'collab-directgpt/session-export@1';
@@ -20,6 +20,8 @@ export interface SessionExport {
   events: LogEvent[];
   requests: Array<Omit<AIRequestRecord, 'anchor' | 'applied'> & { applied?: Omit<NonNullable<AIRequestRecord['applied']>, 'anchor'> }>;
   questionnaires: QuestionnaireResponse[];
+  /** Everyone who joined the room, in join order (any number of participants). */
+  roster: RosterEntry[];
 }
 
 export function buildExport(doc: Y.Doc, room: string, now: Date = new Date()): SessionExport | null {
@@ -31,7 +33,8 @@ export function buildExport(doc: Y.Doc, room: string, now: Date = new Date()): S
   const finalText = parts.text.toString();
   const task = findTask(meta.task);
   const targets = task && task.items.length > 0 && task.text === meta.initialText ? targetSpans(task) : null;
-  const summary = summarizeSession({ meta, events, questionnaires, finalText, targets });
+  const roster = listRoster(doc);
+  const summary = summarizeSession({ meta, events, questionnaires, finalText, targets, roster });
   const requests = listRequests(doc).map((r) => {
     const { anchor: _anchor, applied, ...rest } = r;
     void _anchor;
@@ -51,6 +54,7 @@ export function buildExport(doc: Y.Doc, room: string, now: Date = new Date()): S
     events,
     requests,
     questionnaires,
+    roster,
   };
 }
 
@@ -81,8 +85,8 @@ export function summaryCsv(exp: SessionExport): string {
   const s = exp.summary;
   const rows = s.participants.map((p) => {
     const row: Record<string, CsvValue> = {
-      room: exp.room, session: s.sessionId, task: s.task, condition: s.condition, participant: p.participantId, name: p.name,
-      team_taskTimeSec: s.taskTimeSec, team_unintendedChangeChars: s.unintendedChangeChars, team_intendedChangeChars: s.intendedChangeChars,
+      room: exp.room, session: s.sessionId, task: s.task, condition: s.condition, participant: p.participantId, name: p.name, role: p.role,
+      team_participantCount: s.participantCount, team_taskTimeSec: s.taskTimeSec, team_unintendedChangeChars: s.unintendedChangeChars, team_intendedChangeChars: s.intendedChangeChars,
     };
     for (const k of ACTIVITY_COLS) row[k] = p[k];
     row.q_control = p.questionnaire?.control ?? null;

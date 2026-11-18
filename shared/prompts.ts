@@ -21,7 +21,7 @@ export const SCOPED_SYSTEM_PROMPT = [
 
 export const CHAT_SYSTEM_PROMPT = [
   'You are a helpful AI writing assistant. Follow the user\'s instructions carefully.',
-  'The user is co-writing a shared document with a partner. The full current document is given below between <document> tags.',
+  'The user is co-writing a shared document with one or more collaborators. The full current document is given below between <document> tags.',
 ].join(' ');
 
 /** Maximum context characters sent on each side of the selection. */

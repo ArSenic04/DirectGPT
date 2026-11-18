@@ -16,6 +16,7 @@ import type {
   SavedCommand,
   SessionMeta,
   SuggestionVersion,
+  RosterEntry,
 } from './types';
 import { checkAnchor, createAnchor, replaceRange, type AnchorCheck } from './anchors';
 import { classifyScope } from './scope';
@@ -36,6 +37,8 @@ export interface RoomParts {
   meta: Y.Map<unknown>;
   commands: Y.Array<SavedCommand>;
   questionnaires: Y.Array<QuestionnaireResponse>;
+  /** Everyone who has joined the room (any number of participants), keyed by participant id. */
+  participants: Y.Map<RosterEntry>;
 }
 
 export function roomParts(doc: Y.Doc): RoomParts {
@@ -46,6 +49,7 @@ export function roomParts(doc: Y.Doc): RoomParts {
     meta: doc.getMap<unknown>('meta'),
     commands: doc.getArray<SavedCommand>('commands'),
     questionnaires: doc.getArray<QuestionnaireResponse>('questionnaires'),
+    participants: doc.getMap<RosterEntry>('participants'),
   };
 }
 
@@ -59,6 +63,42 @@ export function makeId(prefix: string): string {
   idCounter = (idCounter + 1) % 1_000_000;
   const rand = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now().toString(36)}${idCounter.toString(36)}${rand}`;
+}
+
+// ---------------------------------------------------------------- roster
+
+/**
+ * Add (or refresh) a participant in the room roster. The first join time is
+ * kept, so the join order, and therefore each person's colour, is stable.
+ */
+export function registerParticipant(
+  doc: Y.Doc,
+  entry: { participantId: string; name: string; role: string | null },
+  now: number = Date.now(),
+): RosterEntry {
+  const { participants } = roomParts(doc);
+  const prev = participants.get(entry.participantId);
+  const next: RosterEntry = {
+    participantId: entry.participantId,
+    name: entry.name,
+    role: entry.role,
+    joinedAt: prev ? prev.joinedAt : now,
+    lastSeenAt: now,
+  };
+  doc.transact(() => participants.set(entry.participantId, plain(next)), ORIGIN_META);
+  return next;
+}
+
+/** Roster in join order (ties broken by participant id, so every client agrees). */
+export function listRoster(doc: Y.Doc): RosterEntry[] {
+  return Array.from(roomParts(doc).participants.values())
+    .map((e) => ({ ...e }))
+    .sort((a, b) => a.joinedAt - b.joinedAt || a.participantId.localeCompare(b.participantId));
+}
+
+/** 0-based join position of a participant (-1 if not in the roster). */
+export function rosterIndex(doc: Y.Doc, participantId: string): number {
+  return listRoster(doc).findIndex((e) => e.participantId === participantId);
 }
 
 // ---------------------------------------------------------------- meta / seeding

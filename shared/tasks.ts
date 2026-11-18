@@ -103,8 +103,10 @@ export const TASKS: readonly TaskDefinition[] = [
   },
 ];
 
+/** Look up a task by id, case-insensitively ("t1" finds "T1", "Sandbox" finds "sandbox"). */
 export function findTask(id: string): TaskDefinition | undefined {
-  return TASKS.find((t) => t.id === id);
+  const key = (id ?? '').trim().toLowerCase();
+  return TASKS.find((t) => t.id.toLowerCase() === key);
 }
 
 /** Intended-scope spans (positions in the initial text), merged and sorted. */

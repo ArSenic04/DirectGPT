@@ -23,8 +23,21 @@ export interface Participant {
   color: string;
   /** Lighter version of the colour, used for highlights. */
   colorLight: string;
-  /** Partner role inside the pair ("A" or "B"), decides which task items are shown. */
-  role: 'A' | 'B';
+  /**
+   * Optional study role ("A"/"B" for the pair protocol, "C", "D", … for extra
+   * editors), or null when roles do not apply (free editing / Sandbox).
+   * Any number of participants can share a room; see shared/roles.ts.
+   */
+  role: string | null;
+}
+
+/** One entry of a room's roster (everyone who has joined, in join order). */
+export interface RosterEntry {
+  participantId: string;
+  name: string;
+  role: string | null;
+  joinedAt: number;
+  lastSeenAt: number;
 }
 
 /** Y.RelativePosition serialised with Y.relativePositionToJSON. */
@@ -241,7 +254,7 @@ export interface QuestionnaireResponse {
   id: string;
   participantId: string;
   name: string;
-  role: 'A' | 'B';
+  role: string | null;
   condition: Condition;
   task: string;
   submittedAt: number;

@@ -2,7 +2,7 @@
  * Study measures computed from a room's log (Figure 1, step 9 "collects
  * collaboration and usability measures").
  */
-import type { Condition, LogEvent, QuestionnaireResponse, SessionMeta } from './types';
+import type { Condition, LogEvent, QuestionnaireResponse, RosterEntry, SessionMeta } from './types';
 import { scopedChanges, type Span } from './diff';
 import { scoreQuestionnaire, type QuestionnaireScores } from './questionnaire';
 
@@ -32,6 +32,8 @@ export interface ActivityCounts {
 export interface ParticipantSummary extends ActivityCounts {
   participantId: string;
   name: string;
+  /** Study role (A/B for the pair protocol, C… for extra editors) or null. */
+  role: string | null;
   questionnaire: QuestionnaireScores | null;
 }
 
@@ -44,6 +46,8 @@ export interface SessionSummary extends ActivityCounts {
   intendedChangeChars: number | null;
   /** Characters changed outside the task's target passages: unintended modifications. */
   unintendedChangeChars: number | null;
+  /** Number of distinct participants (any number can share a room). */
+  participantCount: number;
   participants: ParticipantSummary[];
 }
 
@@ -110,20 +114,32 @@ export interface SummaryInput {
   finalText: string;
   /** Intended scope in the initial text; null when the task has no targets. */
   targets: Span[] | null;
+  /** Room roster (everyone who joined), if available. */
+  roster?: RosterEntry[];
 }
 
 export function summarizeSession(input: SummaryInput): SessionSummary {
   const { meta, events, questionnaires, finalText, targets } = input;
+  const roster = input.roster ?? [];
   const team = countActivity(events);
   const ids: string[] = [];
   for (const e of events) if (!ids.includes(e.participantId)) ids.push(e.participantId);
   for (const q of questionnaires) if (!ids.includes(q.participantId)) ids.push(q.participantId);
+  for (const r of roster) if (!ids.includes(r.participantId)) ids.push(r.participantId);
+  const roleOf = (pid: string, own: LogEvent[], q: QuestionnaireResponse | undefined): string | null => {
+    const fromRoster = roster.find((r) => r.participantId === pid);
+    if (fromRoster) return fromRoster.role ?? null;
+    const join = [...own].reverse().find((e) => e.type === 'session_join' && typeof e.data.role === 'string');
+    if (join) return join.data.role as string;
+    return q?.role ?? null;
+  };
   const participants: ParticipantSummary[] = ids.map((pid) => {
     const own = events.filter((e) => e.participantId === pid);
     const q = [...questionnaires].reverse().find((r) => r.participantId === pid);
     return {
       participantId: pid,
-      name: own[0]?.name ?? q?.name ?? pid,
+      name: own[0]?.name ?? q?.name ?? roster.find((r) => r.participantId === pid)?.name ?? pid,
+      role: roleOf(pid, own, q),
       ...countActivity(own),
       questionnaire: q ? scoreQuestionnaire(q.likert, q.tlx) : null,
     };
@@ -140,6 +156,7 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
     taskTimeSec,
     intendedChangeChars: changes ? changes.inside : null,
     unintendedChangeChars: changes ? changes.outside : null,
+    participantCount: participants.length,
     ...team,
     participants,
   };

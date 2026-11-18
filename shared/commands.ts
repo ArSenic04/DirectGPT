@@ -2,7 +2,7 @@
  * Toolbar of reusable AI commands (Figure 1, step 3).
  *
  * DirectGPT introduced a toolbar of reusable prompt commands; here the
- * commands are fixed for the study (so both partners see the same set) and
+ * commands are fixed for the study (so all participants see the same set) and
  * collaborators can additionally save their own custom instructions to a
  * toolbar that is shared through the Y.Doc.
  */

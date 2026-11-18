@@ -6,17 +6,22 @@
  * Team-level measures (task time, unintended modifications, prompts, ...) are
  * paired by session (pair) ID; questionnaire measures are paired by
  * participant ID. Practice and sandbox rooms are ignored.
+ *
+ * Rooms may contain any number of participants. Team measures are per room
+ * regardless of size; participant measures include everyone unless
+ * `pairRolesOnly` keeps only the A/B partners of the formal pair protocol.
  */
 import type { Condition } from './types';
 import type { SessionExport } from './exportData';
 import { EXPORT_SCHEMA } from './exportData';
 import { toCsv, type CsvValue } from './csv';
+import { isPairRole } from './roles';
 
 export const STUDY_TASKS = ['T1', 'T2'];
 export const CONDITIONS: Condition[] = ['direct', 'baseline'];
 
 export const TEAM_MEASURES = [
-  'taskTimeSec', 'unintendedChangeChars', 'intendedChangeChars', 'prompts', 'meanPromptChars', 'accepts',
+  'participantCount', 'taskTimeSec', 'unintendedChangeChars', 'intendedChangeChars', 'prompts', 'meanPromptChars', 'accepts',
   'rejects', 'regenerations', 'conflicts', 'reverts', 'pastes', 'manualEditChars', 'aiErrors', 'meanLatencyMs',
 ] as const;
 export const PARTICIPANT_MEASURES = [
@@ -27,7 +32,7 @@ export type TeamMeasure = (typeof TEAM_MEASURES)[number];
 export type ParticipantMeasure = (typeof PARTICIPANT_MEASURES)[number];
 
 export interface TeamRow { sessionId: string; task: string; condition: Condition; values: Record<TeamMeasure, number | null> }
-export interface ParticipantRow { sessionId: string; participantId: string; task: string; condition: Condition; values: Record<ParticipantMeasure, number | null> }
+export interface ParticipantRow { sessionId: string; participantId: string; role: string | null; task: string; condition: Condition; values: Record<ParticipantMeasure, number | null> }
 
 export interface Descriptives { n: number; mean: number | null; sd: number | null; median: number | null }
 export interface WilcoxonResult { n: number; wPlus: number; wMinus: number; statistic: number; z: number | null; p: number | null; method: 'exact' | 'normal' | 'none' }
@@ -61,16 +66,23 @@ export function teamRows(exports: SessionExport[]): TeamRow[] {
     });
 }
 
-export function participantRows(exports: SessionExport[]): ParticipantRow[] {
+export interface AnalyzeOptions {
+  /** Keep only participants with study role A or B in participant-level measures. */
+  pairRolesOnly?: boolean;
+}
+
+export function participantRows(exports: SessionExport[], options: AnalyzeOptions = {}): ParticipantRow[] {
   const rows: ParticipantRow[] = [];
   for (const e of exports) {
     if (!STUDY_TASKS.includes(e.summary.task)) continue;
     for (const p of e.summary.participants) {
+      const role = p.role ?? null;
+      if (options.pairRolesOnly && !isPairRole(role)) continue;
       const q = (p.questionnaire ?? {}) as Record<string, unknown>;
       const a = p as unknown as Record<string, unknown>;
       const values = {} as Record<ParticipantMeasure, number | null>;
       for (const m of PARTICIPANT_MEASURES) values[m] = finite(m in q ? q[m] : a[m]);
-      rows.push({ sessionId: e.summary.sessionId, participantId: p.participantId, task: e.summary.task, condition: e.summary.condition, values });
+      rows.push({ sessionId: e.summary.sessionId, participantId: p.participantId, role, task: e.summary.task, condition: e.summary.condition, values });
     }
   }
   return rows;
@@ -186,9 +198,9 @@ function compare<M extends string>(
   };
 }
 
-export function analyze(exports: SessionExport[]): { team: TeamRow[]; participants: ParticipantRow[]; comparisons: Comparison[] } {
+export function analyze(exports: SessionExport[], options: AnalyzeOptions = {}): { team: TeamRow[]; participants: ParticipantRow[]; comparisons: Comparison[] } {
   const team = teamRows(exports);
-  const participants = participantRows(exports);
+  const participants = participantRows(exports, options);
   const comparisons = [
     ...TEAM_MEASURES.map((m) => compare('team', m, team, (r) => (r as TeamRow).sessionId)),
     ...PARTICIPANT_MEASURES.map((m) => compare('participant', m, participants, (r) => (r as ParticipantRow).participantId)),
@@ -210,7 +222,7 @@ export function comparisonsCsv(comparisons: Comparison[]): string {
 }
 
 export function rowsCsv(rows: Array<TeamRow | ParticipantRow>): string {
-  return toCsv(rows.map((r) => ({ sessionId: r.sessionId, ...('participantId' in r ? { participantId: r.participantId } : {}), task: r.task, condition: r.condition, ...r.values })));
+  return toCsv(rows.map((r) => ({ sessionId: r.sessionId, ...('participantId' in r ? { participantId: r.participantId, role: r.role ?? '' } : {}), task: r.task, condition: r.condition, ...r.values })));
 }
 
 const fmt = (v: number | null, digits = 2) => (v === null ? '–' : v.toFixed(digits));

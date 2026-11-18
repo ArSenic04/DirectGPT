@@ -19,9 +19,9 @@ export const LIKERT_ITEMS: readonly LikertItem[] = [
   { id: 'transp1', construct: 'transparency', text: 'I could tell which parts of the document were changed by the AI.' },
   { id: 'transp2', construct: 'transparency', text: 'I knew who requested each AI change.' },
   { id: 'transp3', construct: 'transparency', text: 'I could see what the AI was going to change before it was applied.' },
-  { id: 'coord1', construct: 'coordination', text: 'I was aware of what my partner was working on.' },
-  { id: 'coord2', construct: 'coordination', text: 'My partner\'s AI edits did not disrupt my own work.' },
-  { id: 'coord3', construct: 'coordination', text: 'It was easy to coordinate edits with my partner.' },
+  { id: 'coord1', construct: 'coordination', text: 'I was aware of what my partner(s) were working on.' },
+  { id: 'coord2', construct: 'coordination', text: "Other people's AI edits did not disrupt my own work." },
+  { id: 'coord3', construct: 'coordination', text: 'It was easy to coordinate edits with my partner(s).' },
 ];
 
 export interface TlxScale {
