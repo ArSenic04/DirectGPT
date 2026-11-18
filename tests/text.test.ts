@@ -92,6 +92,14 @@ describe('MOCK LLM (deterministic)', () => {
     expect(mockTransform('expand', '', 'The barrels will be installed on April 12.', 0).length).toBeGreaterThan(45);
   });
 
+  it('never returns an unchanged or longer text for shorten/summarize, even on short sentences', () => {
+    for (const sentence of ['Every AI edit is attributed to the person who requested it.', 'The barrels will be installed on April 12.']) {
+      for (const id of ['shorten', 'summarize']) {
+        for (const variant of [0, 1, 2]) expect(mockTransform(id, '', sentence, variant).length).toBeLessThan(sentence.length);
+      }
+    }
+  });
+
   it('changes tone', () => {
     expect(mockTransform('tone-formal', '', "We know life gets busy, so don't worry.", 0)).toContain('do not');
     expect(mockTransform('tone-casual', '', 'We do not require assistance.', 0)).toContain("don't");
@@ -144,5 +152,36 @@ describe('rooms and tasks', () => {
     expect(Math.abs(t1.text.length - t2.text.length) / t1.text.length).toBeLessThan(0.1);
     // overlapping items on paragraph 3 merge into one span
     expect(targetSpans(t1).length).toBeLessThan(t1.items.length);
+  });
+});
+
+import { ORDERS, orderForPair, pairNumberFromSession } from '../shared/counterbalance';
+import { copyableText } from '../src/collab/copyable';
+
+describe('counterbalancing', () => {
+  it('is a balanced Latin square over condition x document', () => {
+    const firsts = ORDERS.map((o) => o[0].condition);
+    expect(firsts.filter((c) => c === 'direct')).toHaveLength(2);
+    const combos = new Set(ORDERS.flatMap((o) => o.map((b) => `${b.condition}-${b.task}`)));
+    expect(combos.size).toBe(4);
+    for (const o of ORDERS) {
+      expect(o[0].condition).not.toBe(o[1].condition);
+      expect(o[0].task).not.toBe(o[1].task);
+    }
+  });
+
+  it('assigns orders cyclically by pair number', () => {
+    expect(orderForPair(1)).toBe(ORDERS[0]);
+    expect(orderForPair(5)).toBe(ORDERS[0]);
+    expect(orderForPair(4)).toBe(ORDERS[3]);
+    expect(pairNumberFromSession('pair07')).toBe(7);
+    expect(pairNumberFromSession('demo')).toBeNull();
+  });
+});
+
+describe('baseline copy button', () => {
+  it('copies the answer body without the "Here is…:" lead-in', () => {
+    expect(copyableText('Here is the revised passage:\n\nShort text.')).toBe('Short text.');
+    expect(copyableText('Just an answer.')).toBe('Just an answer.');
   });
 });

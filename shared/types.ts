@@ -209,6 +209,15 @@ export interface LLMErrorBody {
   code: 'bad_request' | 'no_key' | 'auth' | 'rate_limit' | 'provider_error' | 'network' | 'timeout';
 }
 
+/**
+ * Body of a /api/llm answer. Provider-side failures (no key, bad key, rate
+ * limit, network, timeout) are answered with HTTP 200 and ok: false: they are
+ * expected outcomes shown in the UI, not transport errors (this also keeps
+ * the browser console free of "failed to load resource" noise). Malformed
+ * requests still get HTTP 4xx.
+ */
+export type LLMResponse = ({ ok: true } & LLMResult) | ({ ok: false } & LLMErrorBody);
+
 export interface ServerConfig {
   serverKeyConfigured: boolean;
   defaultModel: string;

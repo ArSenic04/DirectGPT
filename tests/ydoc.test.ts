@@ -123,6 +123,15 @@ describe('AI request lifecycle (Figure 1, steps 2-8)', () => {
     expect(failRequest(a, r2.id, 'bad key')).toMatchObject({ status: 'failed' });
   });
 
+  it('drops a late suggestion for a request cancelled while generating', () => {
+    const { a } = setup();
+    const r = request(a);
+    rejectRequest(a, r.id, 'P01');
+    expect(addSuggestion(a, r.id, version('late')).status).toBe('rejected');
+    expect(failRequest(a, r.id, 'late error')?.status).toBe('rejected');
+    expect(listRequests(a)[0].versions).toHaveLength(0);
+  });
+
   it('revert restores the replaced text, attributed to whoever reverted', () => {
     const { a, b } = setup();
     const r = request(a);
@@ -254,6 +263,7 @@ describe('conflict detection (Figure 1, step 9)', () => {
   it('marks interrupted generations of the reloading user as failed', () => {
     const { a } = setup();
     request(a);
+    expect(failStaleGenerations(a, 'P01', 0, 2001, alice.clientId)).toBe(0); // same tab: still in flight
     expect(failStaleGenerations(a, 'P01', 1000, 2000 + 5000)).toBe(1);
     expect(listRequests(a)[0].status).toBe('failed');
   });

@@ -112,15 +112,17 @@ describe('collaboration server', () => {
     const request = { kind: 'scoped', commandId: 'grammar', instruction: 'Fix', selection: 'We dont know.', contextBefore: '', contextAfter: '', variant: 0 };
     const ok = await post({ provider: 'mock', request });
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toMatchObject({ text: "We don't know.", provider: 'mock' });
+    expect(await ok.json()).toMatchObject({ ok: true, text: "We don't know.", provider: 'mock' });
+    // Provider failures are expected outcomes: reported in-band with HTTP 200.
     const noKey = await post({ provider: 'openai', request });
-    expect(noKey.status).toBe(400);
-    expect((await noKey.json()).code).toBe('no_key');
+    expect(noKey.status).toBe(200);
+    expect(await noKey.json()).toMatchObject({ ok: false, code: 'no_key', status: 400 });
     const network = await post({ provider: 'openai', request }, { 'X-OpenAI-Key': 'sk-test' });
-    expect(network.status).toBe(502);
-    expect((await network.json()).code).toBe('network');
+    expect(await network.json()).toMatchObject({ ok: false, code: 'network', status: 502 });
+    // Malformed requests are HTTP errors.
     const bad = await fetch(`${base}/api/llm`, { method: 'POST', body: '{not json' });
     expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ ok: false, code: 'bad_request' });
     const config = await (await fetch(`${base}/api/config`)).json();
     expect(config).toMatchObject({ serverKeyConfigured: false, defaultModel: 'gpt-test' });
   });

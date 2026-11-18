@@ -86,11 +86,15 @@ export function createApp(opts: AppOptions) {
         const keyHeader = req.headers['x-openai-key'];
         const uiKey = Array.isArray(keyHeader) ? keyHeader[0] : keyHeader;
         const result = await completeLLM(call, uiKey, opts.llm);
-        return sendJson(res, 200, result);
+        return sendJson(res, 200, { ok: true, ...result });
       } catch (err) {
-        if (err instanceof LLMError) return sendJson(res, err.status, err.body);
+        if (err instanceof LLMError) {
+          // Provider outcomes are reported in-band (see LLMResponse); only malformed requests are HTTP errors.
+          if (err.body.code === 'bad_request') return sendJson(res, err.status, { ok: false, ...err.body });
+          return sendJson(res, 200, { ok: false, ...err.body, status: err.status });
+        }
         console.error('[llm] unexpected error', err);
-        return sendJson(res, 500, { error: 'Unexpected server error while calling the LLM.', code: 'provider_error' });
+        return sendJson(res, 200, { ok: false, error: 'Unexpected server error while calling the LLM.', code: 'provider_error' });
       }
     }
 

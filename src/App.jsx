@@ -9,6 +9,7 @@ import ChatInterface from './view/ChatInterface';
 import StudyInterface from './view/study/StudyInterface';
 import UnknownEntity from './view/entities/UnknownEntity';
 import Launcher from './view/Launcher';
+import CollabApp from './collab/CollabApp';
 
 
 function App() {
@@ -122,6 +123,12 @@ There was nothing so _very_ remarkable in that; nor did Alice think it so _very_
     },
 
     {
+      // Collaborative DirectGPT (multi-user extension, see README)
+      path: '/collab',
+      element: <CollabApp/>
+    },
+
+    {
       path: '/',
       loader: () => {
         return null;
@@ -133,7 +140,7 @@ There was nothing so _very_ remarkable in that; nor did Alice think it so _very_
   );
 
   return (
-    <RouterProvider router={router} />
+    <RouterProvider router={router} future={{ v7_startTransition: true }} />
   );
 }
 

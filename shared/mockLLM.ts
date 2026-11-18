@@ -180,8 +180,27 @@ const shorten: Transform = (text, variant) => {
       })
       .join(' ');
   }
-  return tidy(out);
+  out = tidy(out);
+  if (out.length >= text.trim().length) out = trimTrailingClauses(out, variant);
+  return out;
 };
+
+const CLAUSE_CUT = /\s(?:who|which|that|because|so that|when|where|with|for|in|on|at|by|from|to)\s/gi;
+
+/** Last-resort shortening: drop the trailing clause or phrase of each long sentence. */
+function trimTrailingClauses(text: string, variant: number): string {
+  return splitSentences(text)
+    .map((sentence) => {
+      const end = sentence.match(/[.!?…]["'”’)]*$/)?.[0] ?? '.';
+      const body = sentence.slice(0, sentence.length - (sentence.match(/[.!?…]["'”’)]*$/)?.[0].length ?? 0));
+      if (body.split(/\s+/).length < 7) return sentence;
+      const cuts = [...body.matchAll(CLAUSE_CUT)].map((m) => m.index ?? 0).filter((i) => i >= body.length * 0.4);
+      if (cuts.length === 0) return sentence;
+      const at = variant % 2 === 1 ? cuts[0] : cuts[cuts.length - 1];
+      return body.slice(0, at).replace(/[,;:]\s*$/, '') + end;
+    })
+    .join(' ');
+}
 
 const EXPAND_TEMPLATES = [
   (topic: string) => `We will share more details about ${topic} as the date approaches, so keep an eye on your inbox.`,
@@ -339,7 +358,7 @@ export function mockTransform(commandId: string, instruction: string, text: stri
   const core = text.trim();
   if (core.length === 0) return text;
   let result = transform(core, variant);
-  if (result === core && variant > 0) {
+  if (result === core && variant > 0 && id !== 'shorten' && id !== 'summarize') {
     // Regeneration must offer a visibly different alternative where possible.
     result = rewrite(core, variant);
   }

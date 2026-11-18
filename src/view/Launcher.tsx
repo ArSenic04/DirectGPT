@@ -15,6 +15,10 @@ export default function Launcher(props: { children: React.ReactNode, leftSide?: 
   // Three big buttons to start text, code and image
   return <div className="short-pulse" style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
     <GithubCorner href="https://github.com/m-damien/DirectGPT"/>
+    {/* Collaborative DirectGPT extension (multi-user mode, see src/collab) */}
+    <a href="#/collab" data-testid="launcher-collab" style={{ marginBottom: 30, padding: '14px 24px', borderRadius: 8, background: '#111827', color: 'white', textDecoration: 'none', fontSize: 20, fontWeight: 'bold' }}>
+      New: Collaborative DirectGPT (multi-user editing) →
+    </a>
     <h1>OpenAI API key</h1>
     <span style={{ fontSize: 25 }}>To run the examples below, please paste an OpenAI API key. You can obtain one from <a href="https://platform.openai.com/account/api-keys">here</a>.</span>
     <div style={{display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 30}}>

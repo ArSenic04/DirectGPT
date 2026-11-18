@@ -198,6 +198,8 @@ export function createRequest(doc: Y.Doc, input: CreateRequestInput): AIRequestR
 export function addSuggestion(doc: Y.Doc, id: string, version: SuggestionVersion, now: number = Date.now()): AIRequestRecord {
   const r = getRequest(doc, id);
   if (!r) throw new Error(`Unknown request ${id}`);
+  // A late answer for a request that was cancelled/rejected meanwhile is dropped.
+  if (r.status !== 'generating') return r;
   const { text } = roomParts(doc);
   r.versions.push(version);
   r.activeVersion = r.versions.length - 1;
@@ -217,6 +219,7 @@ export function addSuggestion(doc: Y.Doc, id: string, version: SuggestionVersion
 export function failRequest(doc: Y.Doc, id: string, error: string, now: number = Date.now()): AIRequestRecord | undefined {
   const r = getRequest(doc, id);
   if (!r) return undefined;
+  if (r.status !== 'generating') return r;
   // Keep previous versions reviewable if a regeneration fails.
   if (r.versions.length > 0) {
     r.status = 'pending';
@@ -434,11 +437,25 @@ export function liveCheck(doc: Y.Doc, r: AIRequestRecord): AnchorCheck {
   return checkAnchor(doc, roomParts(doc).text, r.anchor, r.originalText);
 }
 
-/** Requests of a requester stuck in "generating" (e.g. the tab was closed). */
-export function failStaleGenerations(doc: Y.Doc, participantId: string, olderThanMs: number, now: number = Date.now()): number {
+/**
+ * Requests of a requester stuck in "generating" because the tab that issued
+ * them was closed or reloaded (their client id differs from the current one).
+ */
+export function failStaleGenerations(
+  doc: Y.Doc,
+  participantId: string,
+  olderThanMs: number,
+  now: number = Date.now(),
+  currentClientId: number | null = null,
+): number {
   let n = 0;
   for (const r of listRequests(doc)) {
-    if (r.requester.participantId === participantId && r.status === 'generating' && now - r.updatedAt > olderThanMs) {
+    if (
+      r.requester.participantId === participantId &&
+      r.status === 'generating' &&
+      now - r.updatedAt >= olderThanMs &&
+      r.requester.clientId !== currentClientId
+    ) {
       failRequest(doc, r.id, 'The AI request was interrupted (page reloaded). Regenerate or reject it.', now);
       n++;
     }

@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:all": "npm run test && npm run test:e2e",
-    "screenshots": "playwright test e2e/screenshots.spec.ts",
+    "screenshots": "SCREENSHOTS=1 playwright test e2e/screenshots.spec.ts",
     "analyze": "tsx scripts/analyze.ts"
   },
   "dependencies": {
