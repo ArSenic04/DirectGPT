@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: {
     // Production build served by the real server, with the MOCK LLM and an
     // unreachable OpenAI base URL (to test network-error handling offline).
-    command: `npm run build && rm -rf test-results/e2e-data && PORT=${PORT} MOCK_LATENCY_MS=400 DATA_DIR=test-results/e2e-data OPENAI_BASE_URL=http://127.0.0.1:9/v1 npx tsx server/index.ts`,
+    command: `npm run build && rm -rf test-results/e2e-data && PORT=${PORT} OPENAI_API_KEY= MOCK_LATENCY_MS=400 DATA_DIR=test-results/e2e-data OPENAI_BASE_URL=http://127.0.0.1:9/v1 npx tsx server/index.ts`,
     url: `http://localhost:${PORT}/api/health`,
     timeout: 180_000,
     reuseExistingServer: false,
