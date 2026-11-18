@@ -4,6 +4,10 @@ This protocol puts into practice the evaluation described in the proposal *Colla
 Manipulation for Multi-User AI-Assisted Document Editing* (Kachhadiya & Ardeshna, IFT 6077, Université de Montréal).
 Every element below is implemented in this repository. File references are given so the procedure can be audited.
 
+> **Group size.** The system supports any number of collaborators in one session (the tests cover 4, 5, 6 and 10
+> people). **The formal study uses pairs** (two participants, study roles A and B), as in the proposal. Larger groups
+> are for demos and future work; section 9 explains how to handle extra people.
+
 ## 1. Research questions
 
 Compared with conventional prompt-based AI editing, does direct manipulation **plus** scoped edits, preview and
@@ -107,7 +111,7 @@ Nine 7-point Likert items (1 = strongly disagree, 7 = strongly agree), averaged 
 
 - **Control**: I felt in control of what the AI changed in our document. / I could limit AI changes to exactly the text I intended. / I could easily reject AI changes I did not want.
 - **Transparency**: I could tell which parts of the document were changed by the AI. / I knew who requested each AI change. / I could see what the AI was going to change before it was applied.
-- **Coordination**: I was aware of what my partner was working on. / My partner's AI edits did not disrupt my own work. / It was easy to coordinate edits with my partner.
+- **Coordination**: I was aware of what my partner(s) were working on. / Other people's AI edits did not disrupt my own work. / It was easy to coordinate edits with my partner(s).
 
 **Raw NASA-TLX** (mental, physical and temporal demand, performance, effort, frustration; each 0–100). The raw TLX
 score is the mean of the six subscales.
@@ -132,7 +136,18 @@ collecting real data. Never report demo output as results.
 - Store `data/` on an encrypted disk and delete it according to the ethics approval. `data/` is git-ignored.
 - To pilot without spending money or sending data to a third party, use the **MOCK** provider. MOCK suggestions are visibly labelled, so the provider is never in doubt.
 
-## 9. Pilot checklist
+## 9. Sessions with more than two people
+
+The app does not limit group size. For the pair study, only A and B are participants. If someone else must be in
+the room (for example a facilitator demonstrating the interface), they should join with role C or later, or with no
+role. They are labelled *Extra editor* and see all items instead of their own, and the export marks their role.
+
+- Team measures (task time, unintended modifications, …) are computed per room whatever its size, and the export reports `participantCount`. Analyse only pair rooms, or report group size as a covariate.
+- Participant measures include everyone by default. Use `npm run analyze -- --pair-roles-only` to keep only A and B.
+- The questionnaire wording ("my partner(s)", "other people's AI edits") fits pairs and larger groups.
+- Every person needs their own participant ID. The setup screen suggests a fresh one, and a warning appears if two people join with the same ID.
+
+## 10. Pilot checklist
 
 - [ ] `npm test` and `npm run test:e2e` pass on the study machine.
 - [ ] Two lab machines can reach `http://HOST:1234`. Presence shows both users. Typing syncs.

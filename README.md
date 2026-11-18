@@ -6,7 +6,7 @@ Collaborative DirectGPT is a research prototype for the IFT 6077 (Human-AI Inter
 *"Collaborative DirectGPT: Direct Manipulation for Multi-User AI-Assisted Document Editing"* by
 **Vishwa Anilkumar Kachhadiya** and **Shivam Mayurbhai Ardeshna** (Université de Montréal).
 
-Two or more people edit one shared document in real time. To use the AI, a person **selects** the text to change,
+Any number of people (2, 5, 10 or more) edit one shared document in real time. To use the AI, a person **selects** the text to change,
 picks a **command** (or types an instruction), **previews** the AI's suggestion as a diff, and **accepts or rejects** it.
 Accepted edits sync to every collaborator and go into a shared **history**. The history records who requested each
 edit, who approved it, and its status, and anyone can **revert** an edit from there. If a collaborator edits the
@@ -16,6 +16,9 @@ silently over the collaborator's work.
 The project is a fork of, and builds on, **[DirectGPT](https://github.com/m-damien/DirectGPT)**
 (Masson, Malacria, Casiez & Vogel, CHI 2024, [10.1145/3613904.3642462](https://doi.org/10.1145/3613904.3642462)).
 The original single-user DirectGPT is kept intact and still runs from the launcher.
+
+![Four collaborators in one session](docs/screenshots/07-four-users.png)
+*Four collaborators in one session: partners A and B of the pair study plus two extra editors. Each person has their own colour, cursor and attribution.*
 
 | Two collaborators, live | Preview before applying | Conflict protection |
 |---|---|---|
@@ -33,6 +36,7 @@ The original single-user DirectGPT is kept intact and still runs from the launch
 2. [How this extends DirectGPT](#how-this-extends-directgpt)
 3. [Architecture (mapped to Figure 1 of the proposal)](#architecture-mapped-to-figure-1-of-the-proposal)
 4. [Using the app](#using-the-app)
+   - [Any number of collaborators and join links](#any-number-of-collaborators-and-join-links)
 5. [Running a study session](#running-a-study-session)
 6. [Data export and analysis](#data-export-and-analysis)
 7. [LLM providers: MOCK vs OpenAI](#llm-providers-mock-vs-openai)
@@ -52,9 +56,9 @@ npm install
 npm run dev          # server on :1234 + Vite client on :5173 (hot reload)
 ```
 
-Open **http://localhost:5173/#/collab**. To see the collaboration, open the same link in a second browser window
-(or a private window). Use the same *Session ID*, task **Sandbox** and provider **MOCK**, and give each window a
-different display name.
+Open **http://localhost:5173/#/collab**. To see the collaboration, open the invite link from the setup screen in as
+many browser windows (or private windows, or other computers on the same network) as you like. Use the same *Session
+ID*, task **Sandbox** and provider **MOCK**, and give each window a different display name.
 
 Production-style single server (this is what the end-to-end tests use):
 
@@ -72,7 +76,7 @@ To use a real model, see [LLM providers](#llm-providers-mock-vs-openai).
 | `npm start` | Build, then run the production server on `PORT` (default 1234) |
 | `npm run build` | Strict type-check of client, server and shared code, then `vite build` |
 | `npm test` | Unit tests (Vitest) |
-| `npm run test:e2e` | End-to-end tests (Playwright, two browser contexts; builds and starts its own server on :4173) |
+| `npm run test:e2e` | End-to-end tests (Playwright, 2 to 11 isolated browser contexts per test; builds and starts its own server on :4173) |
 | `npm run test:all` | Both |
 | `npm run screenshots` | Regenerate `docs/screenshots/*.png` |
 | `npm run analyze` | Analyse study exports (see [analysis](#data-export-and-analysis)) |
@@ -91,7 +95,7 @@ the same time?*
 
 | DirectGPT (single user) | Collaborative DirectGPT (this fork) |
 |---|---|
-| Continuous representation of the object of interest (text editor) | Shared **CRDT document** (Yjs), live remote cursors and selections, presence bar showing what each partner is doing |
+| Continuous representation of the object of interest (text editor) | Shared **CRDT document** (Yjs), live remote cursors and selections, presence bar showing what each collaborator is doing, for any number of collaborators |
 | Select text, then prompt; the prompt is engineered with a `<blank>` placeholder | Same idea and the same prompt format (`shared/prompts.ts` adapts `TextPrompt.tsx`): only the selection is sent with a little surrounding context, so the AI cannot touch anything else |
 | Toolbar of reusable commands; saving prompts as commands | Command toolbar (rewrite, summarize, clarify, shorten, expand, grammar, tone formal / casual / friendly), custom instructions, and **saved commands shared with the team** |
 | Output replaces the selection immediately; undo to go back | AI output is a **suggestion**: inline **diff preview**, *accept / reject / regenerate* with version navigation. Only the requester decides |
@@ -143,6 +147,7 @@ the same in both conditions, so the experimental contrast is the editing workflo
 
 Main design decisions:
 - **One room per (session, task, condition).** The server seeds each room's text exactly once, which avoids duplicate seeding when two clients join at the same moment.
+- **Any number of collaborators.** Nothing limits a room to two people. Each joiner is added to a shared roster in join order, which gives every person a distinct colour (8 hand-picked colours, then golden-angle hues), and all logic (presence, cursors, pending-request labels, history, conflicts, logging, export) is per participant. Roles A/B only decide which task items someone sees in the pair study.
 - **Only the requester can accept or reject** a suggestion, which preserves individual decision authority as in the proposal. **Anyone can revert** an accepted edit, and the revert is attributed to them.
 - To avoid races, the requester's client is the only one that writes a request's conflict status. Other clients compute the same check locally for display.
 - The API key is **never stored**. A key typed in the UI is kept in memory for the tab and sent in a header for each request. A server key comes only from the environment.
@@ -152,15 +157,63 @@ Main design decisions:
 ## Using the app
 
 1. Open `/#/collab` (or *New: Collaborative DirectGPT* in the original launcher).
-2. Fill in **Session / pair ID**, **Participant ID**, **Display name** and **Partner role (A/B)**, then choose the **condition**, the **task** and the **LLM provider**. *Copy link for partner* produces a ready-made join link for the other person.
+2. Fill in **Session / pair ID**, **Participant ID** (a fresh one is suggested), **Display name** and, for study tasks, an optional **Study role**. Then choose the **condition**, the **task** and the **LLM provider**. *Copy link for partners (anyone)* copies an invite link that you can send to as many people as you like.
 3. **Direct manipulation** condition:
    - Select text in the document. Optionally widen the selection to the sentence or paragraph.
    - Click a command, or type an instruction and click *Ask AI*. Click *Save* to share the instruction as a team command.
    - Review the diff. Then **Accept**, **Reject** or **Regenerate**, and use ‹ › to switch between versions.
    - The **History** tab lists every request and its status. **Revert** undoes an accepted edit.
-   - If your partner edits text you asked about, the card turns orange (*Conflict*). Choose *Regenerate on current text* (recommended) or *Apply anyway*.
+   - If anyone else edits text you asked about, the card turns orange (*Conflict*). Choose *Regenerate on current text* (recommended) or *Apply anyway*.
 4. **Baseline** condition: describe the change in the chat, click *Copy*, and paste the text into the document yourself.
 5. The **AI provenance** toggle in the header shows or hides the highlighting of AI-written text. The header also has **Export data** and the LLM settings (click the provider badge).
+
+### Any number of collaborators and join links
+
+A session has no size limit: 2, 5 or 10+ people can join the same document. The end-to-end tests run sessions with 4, 5,
+6 and 10 people.
+
+**Join-link format** (everything after `#/collab?` is a normal query string):
+
+```
+http://<HOST>:<PORT>/#/collab?session=<id>&task=<task>&condition=<direct|baseline>&pid=<participant-id>&name=<display-name>[&role=<A-Z>][&provider=<mock|openai>][&model=<model>]
+```
+
+| Parameter | Required | Values |
+|---|---|---|
+| `session` | yes | Any id (letters, digits, `-`, `_`). Everyone with the same `session`, `task` and `condition` is in the same room. `pairNN` also selects the counterbalanced order |
+| `task` | yes | `sandbox` (free editing, no roles), `practice`, `T1`, `T2`. Matching is case-insensitive, so `Sandbox` and `t1` also work |
+| `condition` | yes | `direct` (Collaborative DirectGPT) or `baseline` (prompt-based chat) |
+| `pid` | yes* | Participant id, unique per person, e.g. `P05` |
+| `name` | yes* | Display name shown to the others |
+| `role` | no | `A` / `B`: pair-study partners with their own items. `C`, `D`, …: extra editors who see all items. Omit it for no role. Ignored for `sandbox` |
+| `provider` | no | `mock` (default) or `openai` |
+| `model` | no | Model name for `openai` (default `gpt-4o`) |
+
+\* If `pid` or `name` is missing, the link opens the setup screen with everything else filled in and a fresh suggested
+participant id. That is how the shared **invite link** works: send one link to everyone, and each person types their
+own name. If two people join with the same `pid`, both see a warning banner.
+
+Examples:
+
+```
+# Invite link for everyone (each person enters their own name and id)
+http://10.0.0.65:1234/#/collab?session=team01&task=sandbox&condition=direct&provider=mock
+
+# Ready-made personal links
+http://10.0.0.65:1234/#/collab?session=team01&task=sandbox&condition=direct&pid=P01&name=Shivam&provider=mock
+http://10.0.0.65:1234/#/collab?session=team01&task=sandbox&condition=direct&pid=P02&name=Vishwa&provider=mock
+http://10.0.0.65:1234/#/collab?session=team01&task=sandbox&condition=direct&pid=P03&name=Sam&provider=mock
+```
+
+**On a local network:** the server listens on all network interfaces (IPv4 and IPv6), and on startup it prints
+`on your network: http://<LAN-IP>:1234/#/collab` for each address. Run `npm start` on one computer and have everyone
+on the same Wi-Fi open the LAN address. They need nothing but a browser. `npm run dev` also exposes the dev client on
+the network (port 5173). Set `HOST=127.0.0.1` to restrict the server to your own machine. Campus networks such as
+eduroam often block connections between laptops; a home network or phone hotspot works.
+
+**Roles in study tasks:** A and B have their own three items each (the pair protocol). Extra participants (role C, D, …
+or no role) are labelled *Extra editor* and see every item, so they can help with any of them. In Sandbox there are no
+roles or items.
 
 ---
 
@@ -175,7 +228,9 @@ The full protocol (tasks, counterbalancing, measures, script and analysis plan) 
 4. Run the two blocks in the order shown, for example *Direct on T1, then Baseline on T2*. In each block, one partner clicks **Start task**, both partners do their own three items, and then they click **Finish task**. Each participant then fills in the **questionnaire**: 9 Likert items on control, transparency and coordination, plus the raw NASA-TLX.
 5. Click **Export data** in each room, or rely on the copy the server writes to `data/exports/` on every export.
 
-The interface is fully driven by URL parameters, so prepared links work as well:
+The formal study uses **pairs** (roles A and B). Extra people can join a session, but they are not part of the
+protocol, and `npm run analyze -- --pair-roles-only` restricts participant-level measures to A and B. The interface is
+fully driven by URL parameters, so prepared links work as well (see the [join-link format](#any-number-of-collaborators-and-join-links)):
 
 ```
 http://HOST:1234/#/collab?session=pair03&task=T1&condition=direct&role=A&pid=P05&name=Alice&provider=mock
@@ -233,8 +288,8 @@ to the document in these cases. The key is never written to logs, exports, the r
 ## Tests
 
 ```bash
-npm test             # 90 unit tests (Vitest)
-npm run test:e2e     # 5 end-to-end tests (Playwright, Chromium, two isolated browser contexts)
+npm test             # 97 unit tests (Vitest)
+npm run test:e2e     # 8 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
 ```
 
 - **Unit tests** (`tests/`) cover:
@@ -244,12 +299,18 @@ npm run test:e2e     # 5 end-to-end tests (Playwright, Chromium, two isolated br
   - room naming and tasks; counterbalancing; metrics and the unintended-modification count; CSV/JSON export
   - the questionnaire scoring; the statistics (checked against R)
   - the LLM gateway (mocked `fetch`: success, auth, rate limit, timeout, network); the HTTP API and websocket rooms
-- **End-to-end tests** (`e2e/collab.spec.ts`) run two users in separate browser contexts against the production build:
+  - multi-user: distinct colours for 50 people, roster join order agreed by all clients, roles and items, a 4-person room with a conflict between two extra editors, N-participant export and analysis
+- **End-to-end tests** run each user in a separate browser context against the production build. `e2e/collab.spec.ts` (pairs):
   1. Full direct-manipulation flow: selection, request, preview, accept, sync to the partner, history attribution, revert, regenerate and versions, reject, custom and saved commands, export.
   2. Conflict: overlap warning, live conflict when the partner edits the text, regenerate on the current text, *Apply anyway*.
   3. Baseline: private chat, copy and paste with sync, finish task, questionnaires, CSV/JSON exports and file download.
   4. Graceful LLM errors: no key, unreachable provider, recovery.
   5. Setup screen, launcher link, and the original DirectGPT `/#/text` route.
+
+  `e2e/multiuser.spec.ts` (more than two people):
+  6. Four users (A, B, and extra editors C and D): presence and distinct colours for all, role-based items, live sync of typing, an AI edit by C that the others see pending and C accepts, synced to all four, attribution in everyone's history, a conflict between C and D resolved on the current text, and a 4-participant export.
+  7. Five users in Sandbox (no roles), then a sixth who joins through the shared invite link (setup screen, fresh id, own name), plus the study-role options on the setup screen.
+  8. Ten users typing at the same time end with identical text, and a reused participant id is flagged.
 
   Every e2e test also fails if the browser logs any console error or uncaught exception.
 
@@ -264,7 +325,9 @@ shared/        Framework-independent core shared by client, server and tests
   diff.ts        Word/char diffs, minimal edits, inside/outside-target change counting
   prompts.ts     DirectGPT-style scoped prompt + whole-document chat prompt
   mockLLM.ts     Deterministic MOCK provider
-  tasks.ts       Practice, T1, T2, Sandbox documents and per-partner task items
+  tasks.ts       Practice, T1, T2, Sandbox documents and per-role (A/B) task items
+  roles.ts       Optional study roles (A/B pair, C+ extra editors, none)
+  colors.ts      Distinct colours for any number of participants
   metrics.ts     Session/participant measures;  exportData.ts JSON/CSV export
   questionnaire.ts  Likert + NASA-TLX;  counterbalance.ts Latin square;  analysis.ts statistics
 server/        Node server: Yjs websocket rooms, /api/llm gateway, export API, static hosting
@@ -282,6 +345,8 @@ docs/          STUDY_PROTOCOL.md and screenshots
 - **The MOCK provider is rule-based, not an LLM.** Its suggestions are plausible but simplistic. Use a real key for anything a participant will judge on quality.
 - The OpenAI path is tested with a mocked `fetch`, covering request shape, success and every error class, and against an unreachable host. **Real model output needs a real API key to check.** The prompts follow DirectGPT's format, and the response cleaning strips the usual wrappers (quotes, "Here is…").
 - Timestamps come from each participant's clock. With several machines, keep their clocks synced (NTP) so that cross-client latencies in the event log are meaningful. Task time uses a single start/end pair, so it is not affected.
+- Sessions are tested with up to 10 simultaneous users (plus a duplicate-id joiner) on one machine. Larger groups should work, since Yjs is designed for this, but they have not been measured. With more than 3 people, the presence bar switches to a compact view (avatars and names; hover for activity).
+- Only the person who requested an AI edit can accept or reject it. With many people that is deliberate (individual decision authority), but someone who leaves can strand a pending request. Others can still edit the text, which turns the request into a conflict, and the requester can resolve it when they return.
 - *Finish task* asks for confirmation with the browser's native dialog.
 - Rooms persist to local files, which suits a lab study. The server has no authentication, so do not expose it publicly.
 - The original DirectGPT code still has some upstream npm-audit advisories in transitive dependencies (for example `picomatch` via build tooling) that have no non-breaking fix yet. They do not affect the runtime.
