@@ -267,6 +267,20 @@ describe('conflict detection (Figure 1, step 9)', () => {
     expect(failStaleGenerations(a, 'P01', 1000, 2000 + 5000)).toBe(1);
     expect(listRequests(a)[0].status).toBe('failed');
   });
+
+  it('leaves generations of my other tabs that are still online alone (a second tab must not kill their answer)', () => {
+    const { a } = setup();
+    const r = request(a); // issued by the tab with alice.clientId
+    const otherTab = alice.clientId + 1;
+    expect(failStaleGenerations(a, 'P01', 0, 3000, new Set([otherTab, alice.clientId]))).toBe(0);
+    expect(listRequests(a)[0].status).toBe('generating');
+    // Its answer still lands.
+    expect(addSuggestion(a, r.id, version('Answer.')).status).toBe('pending');
+    // Once that tab is gone, a generation it left behind is failed.
+    const r2 = request(a);
+    expect(failStaleGenerations(a, 'P01', 0, 4000, new Set([otherTab]))).toBe(1);
+    expect(listRequests(a).find((x) => x.id === r2.id)?.status).toBe('failed');
+  });
 });
 
 describe('event log', () => {

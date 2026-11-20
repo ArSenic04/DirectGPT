@@ -477,26 +477,32 @@ export function liveCheck(doc: Y.Doc, r: AIRequestRecord): AnchorCheck {
   return checkAnchor(doc, roomParts(doc).text, r.anchor, r.originalText);
 }
 
+export const INTERRUPTED_ERROR = 'The AI request was interrupted (page reloaded). Regenerate or reject it.';
+
 /**
  * Requests of a requester stuck in "generating" because the tab that issued
- * them was closed or reloaded (their client id differs from the current one).
+ * them was closed or reloaded. `live` is the client id of the current tab, or
+ * the set of client ids currently online (the current tab included): requests
+ * issued by a tab that is still connected, such as a second tab of the same
+ * participant, are left alone so their answer is not thrown away.
  */
 export function failStaleGenerations(
   doc: Y.Doc,
   participantId: string,
   olderThanMs: number,
   now: number = Date.now(),
-  currentClientId: number | null = null,
+  live: number | null | ReadonlySet<number> = null,
 ): number {
+  const isLive = (clientId: number) => (live instanceof Set ? live.has(clientId) : clientId === live);
   let n = 0;
   for (const r of listRequests(doc)) {
     if (
       r.requester.participantId === participantId &&
       r.status === 'generating' &&
       now - r.updatedAt >= olderThanMs &&
-      r.requester.clientId !== currentClientId
+      !isLive(r.requester.clientId)
     ) {
-      failRequest(doc, r.id, 'The AI request was interrupted (page reloaded). Regenerate or reject it.', now);
+      failRequest(doc, r.id, INTERRUPTED_ERROR, now);
       n++;
     }
   }

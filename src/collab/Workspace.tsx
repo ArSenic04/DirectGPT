@@ -32,6 +32,7 @@ import type { RequestActions } from './components/PreviewCard';
 import { formatTime } from './components/StatusBadge';
 import type { SessionParams } from './params';
 import { copyableText } from './copyable';
+import { recentChatMessages } from '../../shared/prompts';
 
 interface Props {
   conn: CollabConnection;
@@ -88,6 +89,7 @@ export function Workspace({ conn, params, me, task, room }: Props) {
   const duplicatePid = presence.some((p) => !p.isLocal && p.user.participantId === me.participantId);
 
   const editorApi = useRef<EditorApi>(null);
+  const flushManualEdits = useRef<(() => void) | null>(null);
   const undoManager = useMemo(() => new Y.UndoManager(parts.text), [parts.text]);
   useEffect(() => () => undoManager.destroy(), [undoManager]);
 
@@ -124,11 +126,30 @@ export function Workspace({ conn, params, me, task, room }: Props) {
     window.setTimeout(() => setToast((t) => (t === message ? null : t)), 4500);
   }, []);
 
-  // Join: log, and clean up requests left "generating" by a previous tab of mine.
+  // Clean up my requests left "generating" by a tab of mine that is gone (closed, reloaded or crashed):
+  // at join, and whenever someone leaves (a crashed tab is only dropped after missing a heartbeat).
+  // Requests of my tabs that are still online are left alone.
   useEffect(() => {
-    failStaleGenerations(doc, me.participantId, 0, Date.now(), doc.clientID);
+    const failGone = () => {
+      const live = new Set<number>(awareness.getStates().keys());
+      live.add(doc.clientID);
+      failStaleGenerations(doc, me.participantId, 0, Date.now(), live);
+    };
+    failGone();
+    const onChange = ({ removed }: { removed: number[] }) => {
+      if (removed.length > 0) failGone();
+    };
+    awareness.on('change', onChange);
+    return () => awareness.off('change', onChange);
+  }, [doc, awareness, me.participantId]);
+
+  // Join and leave events.
+  useEffect(() => {
     log('session_join', { role: me.role, provider: settings.provider, model: settings.provider === 'mock' ? 'mock-deterministic' : settings.model });
-    const onLeave = () => log('session_leave', {});
+    const onLeave = () => {
+      flushManualEdits.current?.();
+      log('session_leave', {});
+    };
     window.addEventListener('pagehide', onLeave);
     return () => window.removeEventListener('pagehide', onLeave);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,9 +207,13 @@ export function Workspace({ conn, params, me, task, room }: Props) {
     };
     parts.text.observe(observer);
     const interval = window.setInterval(flush, MANUAL_EDIT_FLUSH_MS);
+    // Closing or reloading the tab does not run effect cleanups: the leave handler flushes then
+    // (before logging session_leave), or the last seconds of typing would be missing from the log.
+    flushManualEdits.current = flush;
     return () => {
       parts.text.unobserve(observer);
       window.clearInterval(interval);
+      if (flushManualEdits.current === flush) flushManualEdits.current = null;
       flush();
     };
   }, [doc, parts.text, logCtx]);
@@ -446,7 +471,7 @@ export function Workspace({ conn, params, me, task, room }: Props) {
           {
             provider: settings.provider,
             model: settings.provider === 'openai' ? settings.model : undefined,
-            request: { kind: 'chat', document, messages: history.filter((m) => !m.error).map(({ role, content }) => ({ role, content })) },
+            request: { kind: 'chat', document, messages: recentChatMessages(history.filter((m) => !m.error)).map(({ role, content }) => ({ role, content })) },
           },
           settings.apiKey,
         );

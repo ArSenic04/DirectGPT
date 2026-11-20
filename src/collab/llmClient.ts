@@ -1,10 +1,22 @@
 /** Browser side of the LLM gateway: always goes through the local server. */
+import { INTERRUPTED_ERROR } from '../../shared/ydoc';
 import type { LLMCallBody, LLMErrorBody, LLMResponse, LLMResult, ServerConfig } from '../../shared/types';
 
 export class LLMClientError extends Error {
-  constructor(message: string, public code: LLMErrorBody['code'] | 'server_unreachable') {
+  constructor(message: string, public code: LLMErrorBody['code'] | 'server_unreachable' | 'interrupted') {
     super(message);
   }
+}
+
+// The browser aborts pending requests when the page is closed or reloaded; that is not a server problem.
+let leavingPage = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    leavingPage = true;
+  });
+  window.addEventListener('pageshow', () => {
+    leavingPage = false;
+  });
 }
 
 export async function callLLM(body: LLMCallBody, apiKey: string): Promise<LLMResult> {
@@ -19,12 +31,14 @@ export async function callLLM(body: LLMCallBody, apiKey: string): Promise<LLMRes
       body: JSON.stringify(body),
     });
   } catch {
+    if (leavingPage) throw new LLMClientError(INTERRUPTED_ERROR, 'interrupted');
     throw new LLMClientError('Cannot reach the Collaborative DirectGPT server. Is it running?', 'server_unreachable');
   }
   let payload: LLMResponse | null = null;
   try {
     payload = (await response.json()) as LLMResponse;
   } catch {
+    if (leavingPage) throw new LLMClientError(INTERRUPTED_ERROR, 'interrupted');
     payload = null;
   }
   if (!payload) {
