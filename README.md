@@ -296,8 +296,8 @@ to the document in these cases. The key is never written to logs, exports, the r
 ## Tests
 
 ```bash
-npm test             # 102 unit tests (Vitest)
-npm run test:e2e     # 11 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
+npm test             # 117 unit tests (Vitest)
+npm run test:e2e     # 13 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
 ```
 
 - **Unit tests** (`tests/`) cover:
@@ -308,6 +308,7 @@ npm run test:e2e     # 11 end-to-end tests (Playwright, Chromium, 2 to 11 isolat
   - the questionnaire scoring; the statistics (checked against R)
   - the LLM gateway (mocked `fetch`: success, auth, rate limit, timeout, network); the HTTP API and websocket rooms
   - multi-user: distinct colours for 50 people, roster join order agreed by all clients, roles and items, a 4-person room with a conflict between two extra editors, N-participant export and analysis
+  - robustness: malformed URLs and websocket frames never crash the server, static files stay inside the build folder, oversized requests get a 413, the provider timeout also covers a stalled answer, invalid numeric environment variables fall back to defaults, room files are written atomically, long chats stay within the gateway limits, and the analysis counts each room once and pairs participants within their session
 - **End-to-end tests** run each user in a separate browser context against the production build. `e2e/collab.spec.ts` (pairs):
   1. Full direct-manipulation flow: selection, request, preview, accept, sync to the partner, history attribution, revert, regenerate and versions, reject, custom and saved commands, export.
   2. Conflict: overlap warning, live conflict when the partner edits the text, regenerate on the current text, *Apply anyway*.
@@ -324,6 +325,10 @@ npm run test:e2e     # 11 end-to-end tests (Playwright, Chromium, 2 to 11 isolat
   9. Closing a window removes that person from everyone's online list within 1.5 s; a reload never leaves a duplicate.
   10. A new session shows only the people connected to it, whether it is joined from a fresh page, after *Leave* in the same tab, or by changing the link in the address bar.
   11. The same checks with several tabs of one browser (which share storage).
+
+  `e2e/robustness.spec.ts`:
+  12. A second tab of the same participant does not interrupt the first tab's AI request; reloading the requesting tab reports the request as interrupted.
+  13. Typing just before leaving is still logged as a manual edit, before `session_leave`.
 
   Every e2e test also fails if the browser logs any console error or uncaught exception.
 
