@@ -21,6 +21,7 @@ import { networkInterfaces } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app';
+import { numberFromEnv, type NumberEnvOptions } from './env';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
@@ -28,7 +29,13 @@ const envFile = path.join(projectRoot, '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 const env = (name: string): string | undefined => process.env[name] || undefined;
 
-const port = Number(env('PORT') ?? env('SERVER_PORT') ?? 1234);
+const envNumber = (name: string, raw: string | undefined, fallback: number, range: NumberEnvOptions): number => {
+  const { value, warning } = numberFromEnv(name, raw, fallback, range);
+  if (warning) console.warn(`[collab-directgpt] ${warning}`);
+  return value;
+};
+
+const port = envNumber(env('PORT') !== undefined ? 'PORT' : 'SERVER_PORT', env('PORT') ?? env('SERVER_PORT'), 1234, { min: 0, max: 65535 });
 const dataDirEnv = env('DATA_DIR') ?? path.join(projectRoot, 'data');
 
 const { server, rooms } = createApp({
@@ -38,8 +45,8 @@ const { server, rooms } = createApp({
     envApiKey: env('OPENAI_API_KEY'),
     baseUrl: env('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1',
     defaultModel: env('OPENAI_MODEL') ?? 'gpt-4o',
-    mockLatencyMs: Number(env('MOCK_LATENCY_MS') ?? 700),
-    timeoutMs: Number(env('LLM_TIMEOUT_MS') ?? 60_000),
+    mockLatencyMs: envNumber('MOCK_LATENCY_MS', env('MOCK_LATENCY_MS'), 700, { min: 0, max: 60_000 }),
+    timeoutMs: envNumber('LLM_TIMEOUT_MS', env('LLM_TIMEOUT_MS'), 60_000, { min: 1_000, max: 600_000 }),
   },
 });
 
@@ -59,6 +66,14 @@ const onListening = () => {
     for (const ip of lanAddresses()) console.log(`[collab-directgpt] on your network: http://${ip}:${port}/#/collab`);
   }
 };
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[collab-directgpt] port ${port} is already in use (is another server running?). Stop it or start with PORT=<another port>.`);
+  } else {
+    console.error('[collab-directgpt] server error:', err);
+  }
+  process.exit(1);
+});
 if (host) server.listen(port, host, onListening);
 else server.listen(port, onListening);
 
