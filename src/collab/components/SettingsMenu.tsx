@@ -30,7 +30,7 @@ export function LLMSettings() {
             <>
               <label className="cdg-field">
                 Model
-                <input className="cdg-input" value={model} onChange={(e) => setModel(e.target.value)} list="cdg-models" />
+                <input className="cdg-input" value={model} maxLength={100} onChange={(e) => setModel(e.target.value)} list="cdg-models" />
                 <datalist id="cdg-models">
                   <option value="gpt-4o" />
                   <option value="gpt-4o-mini" />

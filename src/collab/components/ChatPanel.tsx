@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, LLMProviderId } from '../../../shared/types';
 import { MockBadge } from './StatusBadge';
+import { MAX_TEXT_CHARS } from '../../../shared/prompts';
 
 export interface ChatEntry extends ChatMessage {
   provider?: LLMProviderId;
@@ -70,12 +71,14 @@ export function ChatPanel({ messages, busy, enabled, disabledReason, onSend, onC
           className="cdg-input"
           rows={3}
           placeholder="Message the assistant…"
+          aria-label="Message the assistant"
+          maxLength={MAX_TEXT_CHARS}
           value={draft}
           disabled={!enabled}
           data-testid="chat-input"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
             }

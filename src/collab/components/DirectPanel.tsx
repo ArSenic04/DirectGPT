@@ -8,6 +8,7 @@ import type { AIRequestRecord, SavedCommand, ScopeKind } from '../../../shared/t
 import { BUILTIN_COMMANDS, TONES, toneCommand, type CommandDefinition } from '../../../shared/commands';
 import type { AnchorCheck } from '../../../shared/anchors';
 import { PreviewCard, type RequestActions } from './PreviewCard';
+import { MAX_INSTRUCTION_CHARS } from '../../../shared/prompts';
 
 export interface SelectionInfo {
   from: number;
@@ -109,12 +110,15 @@ export function DirectPanel(props: Props) {
           <input
             className="cdg-input"
             placeholder="Or type an instruction, e.g. “make this more persuasive”"
+            aria-label="Custom AI instruction"
             value={custom}
+            maxLength={MAX_INSTRUCTION_CHARS}
             disabled={!enabled}
             data-testid="custom-instruction"
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') submitCustom();
+              // Ignore the Enter that confirms an input-method (IME) composition.
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitCustom();
             }}
           />
           <button className="cdg-btn cdg-btn-primary" disabled={!canAsk || !custom.trim()} data-testid="ask-ai" onClick={submitCustom}>
