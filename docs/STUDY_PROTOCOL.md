@@ -122,7 +122,7 @@ There is also an optional free-text comment.
 
 1. Exclude practice and sandbox rooms. Check that every pair has one Direct and one Baseline block.
 2. Compute descriptive statistics for each condition: n, mean, SD and median.
-3. Run a **paired, two-sided Wilcoxon signed-rank test** for each measure, Direct vs Baseline. Team-level measures are paired by **session (pair)** and questionnaire measures by **participant**. The test is exact for n ≤ 25 without ties, and otherwise uses a normal approximation with tie and continuity correction. Report V, p and the **matched-pairs rank-biserial r**.
+3. Run a **paired, two-sided Wilcoxon signed-rank test** for each measure, Direct vs Baseline. Team-level measures are paired by **session (pair)** and questionnaire measures by **participant** (within the session). Each room counts once, even if it was exported more than once. The test is exact for n ≤ 25 without ties, and otherwise uses a normal approximation with tie and continuity correction. Report V, p and the **matched-pairs rank-biserial r**.
 4. Treat RQ1 (task time) and RQ2 (unintended modifications) as primary. Apply a Holm correction across the primary measures and the four questionnaire constructs. Report all other measures as exploratory.
 5. Optionally check order and document effects (for example with Mann-Whitney tests on block 1 vs block 2 differences). With a small n, report these descriptively.
 6. Analyse the interviews with a thematic analysis of the transcripts, coded by both authors, focusing on authorship, control, awareness and conflict handling (following Lehmann et al.).

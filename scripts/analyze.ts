@@ -69,11 +69,14 @@ function main(argv: string[]): number {
   }
 
   const result = analyze(exports, { pairRolesOnly });
+  if (result.duplicatesDropped > 0) {
+    console.warn(`note: ${result.duplicatesDropped} duplicate export(s) of the same room ignored (the most recent export of each room is used).`);
+  }
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'comparisons.csv'), comparisonsCsv(result.comparisons));
   writeFileSync(join(out, 'team.csv'), rowsCsv(result.team));
   writeFileSync(join(out, 'participants.csv'), rowsCsv(result.participants));
-  const report = (demo ? '> **SYNTHETIC DEMO DATA. These numbers are not study results.**\n\n' : '') + comparisonsMarkdown(result.comparisons, exports.length);
+  const report = (demo ? '> **SYNTHETIC DEMO DATA. These numbers are not study results.**\n\n' : '') + comparisonsMarkdown(result.comparisons, exports.length - result.duplicatesDropped);
   writeFileSync(join(out, 'report.md'), report);
   console.log(report);
   console.log(`Wrote ${resolve(out)}/{comparisons.csv,team.csv,participants.csv,report.md}`);

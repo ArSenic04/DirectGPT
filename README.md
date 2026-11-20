@@ -274,7 +274,9 @@ The analysis script (`scripts/analyze.ts`, `shared/analysis.ts`) writes `compari
 median, followed by a **paired two-sided Wilcoxon signed-rank test** with the matched-pairs rank-biserial effect size.
 The test is exact for small samples without ties; otherwise it uses a normal approximation with tie correction. It
 was validated against R's `wilcox.test`. Team measures are paired by session and questionnaire measures by
-participant. `--demo` output is clearly labelled as synthetic and is **not** study data.
+participant within their session, so a participant ID reused in another pair is never merged with someone else. A room
+exported more than once (for example the server copy and a downloaded copy) is counted once, using its most recent
+export. `--demo` output is clearly labelled as synthetic and is **not** study data.
 
 ---
 

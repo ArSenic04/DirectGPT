@@ -48,6 +48,26 @@ group('analyze', () => {
     expect(comparisonsMarkdown(result.comparisons, exports.length)).toContain('| team | taskTimeSec |');
   });
 
+  it('counts a room exported twice only once (the most recent export)', () => {
+    const once = analyze(exports);
+    const later = { ...exports[0], exportedAt: new Date(Date.parse(exports[0].exportedAt) + 60_000).toISOString() };
+    const twice = analyze([...exports, later]);
+    expect(twice.duplicatesDropped).toBe(1);
+    expect(twice.team).toHaveLength(once.team.length);
+    expect(twice.comparisons).toEqual(once.comparisons);
+  });
+
+  it('pairs participant measures within a session, so a participant ID reused by another pair is not merged', () => {
+    // Give every pair the same participant IDs (P01/P02), as a careless setup might.
+    const reused = exports.map((e) => ({
+      ...e,
+      summary: { ...e.summary, participants: e.summary.participants.map((p) => ({ ...p, participantId: p.role === 'A' ? 'P01' : 'P02' })) },
+    }));
+    const control = (r: ReturnType<typeof analyze>) => r.comparisons.find((c) => c.level === 'participant' && c.measure === 'control')!;
+    expect(control(analyze(reused)).pairs).toBe(8);
+    expect(control(analyze(reused)).wilcoxon).toEqual(control(analyze(exports)).wilcoxon);
+  });
+
   it('ignores practice and sandbox rooms', () => {
     const practice = { ...exports[0], summary: { ...exports[0].summary, task: 'practice' } };
     expect(analyze([practice]).team).toHaveLength(0);

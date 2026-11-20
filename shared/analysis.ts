@@ -5,7 +5,8 @@
  *
  * Team-level measures (task time, unintended modifications, prompts, ...) are
  * paired by session (pair) ID; questionnaire measures are paired by
- * participant ID. Practice and sandbox rooms are ignored.
+ * participant ID within the session. Practice and sandbox rooms are ignored,
+ * and a room exported more than once counts once.
  *
  * Rooms may contain any number of participants. Team measures are per room
  * regardless of size; participant measures include everyone unless
@@ -198,14 +199,36 @@ function compare<M extends string>(
   };
 }
 
-export function analyze(exports: SessionExport[], options: AnalyzeOptions = {}): { team: TeamRow[]; participants: ParticipantRow[]; comparisons: Comparison[] } {
-  const team = teamRows(exports);
-  const participants = participantRows(exports, options);
+/**
+ * One export per room: the same room exported twice (for example the server
+ * copy in data/exports/ and a downloaded copy) would otherwise count twice in
+ * every descriptive statistic. The most recent export of a room is kept.
+ */
+export function dedupeExports(exports: SessionExport[]): { exports: SessionExport[]; duplicates: number } {
+  const byRoom = new Map<string, SessionExport>();
+  for (const e of exports) {
+    const prev = byRoom.get(e.room);
+    if (!prev || Date.parse(e.exportedAt) >= Date.parse(prev.exportedAt)) byRoom.set(e.room, e);
+  }
+  return { exports: Array.from(byRoom.values()), duplicates: exports.length - byRoom.size };
+}
+
+export function analyze(
+  exports: SessionExport[],
+  options: AnalyzeOptions = {},
+): { team: TeamRow[]; participants: ParticipantRow[]; comparisons: Comparison[]; duplicatesDropped: number } {
+  const unique = dedupeExports(exports);
+  const team = teamRows(unique.exports);
+  const participants = participantRows(unique.exports, options);
   const comparisons = [
     ...TEAM_MEASURES.map((m) => compare('team', m, team, (r) => (r as TeamRow).sessionId)),
-    ...PARTICIPANT_MEASURES.map((m) => compare('participant', m, participants, (r) => (r as ParticipantRow).participantId)),
+    // A participant is identified within their session (pair): a participant ID reused in another
+    // session is a different person and must not be averaged with them.
+    ...PARTICIPANT_MEASURES.map((m) =>
+      compare('participant', m, participants, (r) => `${(r as ParticipantRow).sessionId}\u0000${(r as ParticipantRow).participantId}`),
+    ),
   ];
-  return { team, participants, comparisons };
+  return { team, participants, comparisons, duplicatesDropped: unique.duplicates };
 }
 
 const round = (v: number | null, digits = 3): number | null => (v === null ? null : Math.round(v * 10 ** digits) / 10 ** digits);
@@ -232,7 +255,7 @@ export function comparisonsMarkdown(comparisons: Comparison[], sources: number):
     '# Collaborative DirectGPT: study analysis',
     '',
     `Generated ${new Date().toISOString()} from ${sources} session export(s). Direct = Collaborative DirectGPT, Baseline = prompt-based chat.`,
-    'Paired two-sided Wilcoxon signed-rank tests (team measures paired by session, questionnaire measures by participant).',
+    'Paired two-sided Wilcoxon signed-rank tests (team measures paired by session, questionnaire measures by participant within the session).',
     'Effect size: matched-pairs rank-biserial r (positive = higher in Direct).',
     '',
     '| Level | Measure | Direct M (SD) | Baseline M (SD) | Pairs | Median diff | V | p | r |',
