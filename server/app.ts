@@ -35,20 +35,48 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
+    const tooLarge = () => new LLMError(413, { error: 'Request too large.', code: 'bad_request' });
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > MAX_BODY) {
+      // Drain without buffering so the 413 answer can still reach the client.
+      req.resume();
+      reject(tooLarge());
+      return;
+    }
     let size = 0;
+    let done = false;
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => {
+      if (done) return;
       size += chunk.length;
       if (size > MAX_BODY) {
-        reject(new LLMError(413, { error: 'Request too large.', code: 'bad_request' }));
-        req.destroy();
+        done = true;
+        chunks.length = 0;
+        reject(tooLarge());
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    req.on('end', () => {
+      if (done) return;
+      done = true;
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', (err) => {
+      if (done) return;
+      done = true;
+      reject(err);
+    });
   });
+}
+
+/** decodeURIComponent that returns null instead of throwing on malformed input such as "%E0%A4%A". */
+export function safeDecode(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
 export function createApp(opts: AppOptions) {
@@ -104,8 +132,8 @@ export function createApp(opts: AppOptions) {
 
     const exportMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/export$/);
     if (exportMatch && req.method === 'GET') {
-      const name = decodeURIComponent(exportMatch[1]);
-      if (!parseRoomName(name)) return sendJson(res, 400, { error: 'Invalid room name.' });
+      const name = safeDecode(exportMatch[1]);
+      if (name === null || !parseRoomName(name)) return sendJson(res, 400, { error: 'Invalid room name.' });
       const room = rooms.find(name);
       const exp = room ? buildExport(room.doc, name) : null;
       if (!exp) return sendJson(res, 404, { error: 'Room not found.' });
@@ -140,23 +168,60 @@ export function createApp(opts: AppOptions) {
       return;
     }
     const root = path.resolve(opts.staticDir);
-    let file = path.resolve(root, '.' + decodeURIComponent(url.pathname));
-    if (!file.startsWith(root)) {
+    const decoded = safeDecode(url.pathname);
+    if (decoded === null || decoded.includes('\0')) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Bad request.');
+      return;
+    }
+    let file = path.resolve(root, '.' + decoded);
+    // Must be the root itself or inside it (a plain prefix check would also accept a sibling such as "build-old").
+    if (file !== root && !file.startsWith(root + path.sep)) {
       res.writeHead(403);
       res.end();
       return;
     }
-    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html');
+    let stat: fs.Stats | null = null;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      stat = null;
+    }
+    if (!stat || stat.isDirectory()) file = path.join(root, 'index.html');
     const ext = path.extname(file);
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] ?? 'application/octet-stream',
-      'Cache-Control': file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
+    const stream = fs.createReadStream(file);
+    stream.on('open', () => {
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] ?? 'application/octet-stream',
+        'Cache-Control': file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
+      });
+      if (req.method === 'HEAD') {
+        stream.destroy();
+        res.end();
+        return;
+      }
+      stream.pipe(res);
     });
-    fs.createReadStream(file).pipe(res);
+    stream.on('error', (err) => {
+      console.error('[static] could not read', file, err.message);
+      if (!res.headersSent) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Not found.');
+      } else {
+        res.destroy();
+      }
+    });
   }
 
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://localhost');
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Bad request.');
+      return;
+    }
     if (url.pathname.startsWith('/api/')) {
       handleApi(req, res, url).catch((err) => {
         console.error('[api] error', err);
@@ -175,6 +240,7 @@ export function createApp(opts: AppOptions) {
       socket.destroy();
       return;
     }
+    socket.on('error', () => socket.destroy());
     wss.handleUpgrade(req, socket, head, (ws) => {
       rooms.get(name).handleConnection(ws);
     });

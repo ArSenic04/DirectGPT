@@ -73,7 +73,14 @@ export class SharedRoom {
       try {
         Y.applyUpdate(this.doc, new Uint8Array(fs.readFileSync(file)));
       } catch (err) {
-        console.error(`[rooms] could not load ${file}:`, err);
+        // Keep the unreadable file for inspection instead of overwriting it with a freshly seeded room.
+        const kept = `${file}.unreadable-${Date.now()}`;
+        try {
+          fs.renameSync(file, kept);
+        } catch {
+          /* keep going: the room still starts */
+        }
+        console.error(`[rooms] could not load ${file} (kept as ${path.basename(kept)}):`, err);
       }
     }
   }
@@ -99,7 +106,10 @@ export class SharedRoom {
     if (!file) return;
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, Y.encodeStateAsUpdate(this.doc));
+      // Write then rename (atomic on the same file system): a crash mid-write never leaves a truncated room file.
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, Y.encodeStateAsUpdate(this.doc));
+      fs.renameSync(tmp, file);
     } catch (err) {
       console.error(`[rooms] could not persist ${file}:`, err);
     }
@@ -141,6 +151,13 @@ export class SharedRoom {
       alive = true;
     });
     conn.on('close', () => {
+      this.close(conn);
+      clearInterval(ping);
+    });
+    // Without a listener, a protocol error (malformed or oversized frame) is an unhandled 'error' event,
+    // which would crash the whole server and disconnect every room. Drop just that connection instead.
+    conn.on('error', (err) => {
+      console.error(`[rooms] connection error in ${this.name}:`, err.message);
       this.close(conn);
       clearInterval(ping);
     });
@@ -313,8 +330,18 @@ export class RoomRegistry {
 
 /** Room name from a websocket upgrade URL such as /yjs/<room>. */
 export function roomFromRequest(req: IncomingMessage): string | null {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+  let url: URL;
+  try {
+    url = new URL(req.url ?? '/', 'http://localhost');
+  } catch {
+    return null;
+  }
   if (!url.pathname.startsWith('/yjs/')) return null;
-  const name = decodeURIComponent(url.pathname.slice('/yjs/'.length));
+  let name: string;
+  try {
+    name = decodeURIComponent(url.pathname.slice('/yjs/'.length));
+  } catch {
+    return null; // malformed percent-encoding
+  }
   return parseRoomName(name) ? name : null;
 }
