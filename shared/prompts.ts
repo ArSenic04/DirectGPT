@@ -69,6 +69,24 @@ Rewrite <blank>. Follow INSTRUCTION
   ];
 }
 
+/** Longest document, selection, context or chat message the gateway accepts (the HTTP body is also capped at 2 MB). */
+export const MAX_TEXT_CHARS = 200_000;
+/** Longest AI instruction the gateway accepts. */
+export const MAX_INSTRUCTION_CHARS = 4000;
+
+/** Longest baseline chat history the gateway accepts (the client sends only the most recent turns). */
+export const MAX_CHAT_MESSAGES = 200;
+
+/**
+ * The most recent `max` messages of a chat, starting with a user message, so a
+ * very long baseline conversation keeps working instead of being rejected.
+ */
+export function recentChatMessages<M extends ChatMessage>(messages: M[], max: number = MAX_CHAT_MESSAGES): M[] {
+  let start = Math.max(0, messages.length - max);
+  while (start < messages.length && messages[start].role !== 'user') start++;
+  return messages.slice(start);
+}
+
 export function buildChatMessages(req: ChatLLMRequest): ChatMessage[] {
   return [
     {

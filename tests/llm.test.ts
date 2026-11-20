@@ -85,3 +85,13 @@ describe('completeLLM', () => {
     await expectLLMError(completeLLM(scoped, 'k', config(hang)), 'timeout', 504);
   });
 });
+
+describe('chat limits', () => {
+  it('accepts long assistant answers (the baseline can return the whole document) and explains limits clearly', () => {
+    const long = 'w '.repeat(30_000);
+    const body = { provider: 'mock', request: { kind: 'chat', document: long, messages: [{ role: 'user', content: 'Rewrite' }, { role: 'assistant', content: long }, { role: 'user', content: 'Shorter' }] } };
+    expect(validateCallBody(body).request.kind).toBe('chat');
+    const tooLong = { provider: 'mock', request: { kind: 'chat', document: '', messages: [{ role: 'user', content: 'x'.repeat(200_001) }] } };
+    expect(() => validateCallBody(tooLong)).toThrow(/too long/);
+  });
+});

@@ -10,7 +10,7 @@
  * (OPENAI_BASE_URL) so the server cannot be used as an open proxy.
  */
 import type { ChatMessage, LLMCallBody, LLMErrorBody, LLMRequest, LLMResult } from '../shared/types';
-import { buildChatMessages, buildScopedMessages, cleanScopedResult } from '../shared/prompts';
+import { MAX_CHAT_MESSAGES, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, buildChatMessages, buildScopedMessages, cleanScopedResult } from '../shared/prompts';
 import { mockComplete } from '../shared/mockLLM';
 
 export interface LLMConfig {
@@ -28,6 +28,7 @@ export class LLMError extends Error {
   }
 }
 
+
 export function validateCallBody(body: unknown): LLMCallBody {
   const bad = (msg: string) => new LLMError(400, { error: msg, code: 'bad_request' });
   if (!body || typeof body !== 'object') throw bad('Request body must be a JSON object.');
@@ -36,8 +37,9 @@ export function validateCallBody(body: unknown): LLMCallBody {
   if (b.model !== undefined && (typeof b.model !== 'string' || b.model.length > 100)) throw bad('model must be a short string.');
   const r = b.request as Record<string, unknown> | undefined;
   if (!r || typeof r !== 'object') throw bad('request is required.');
-  const str = (v: unknown, name: string, max = 200_000) => {
-    if (typeof v !== 'string' || v.length > max) throw bad(`${name} must be a string.`);
+  const str = (v: unknown, name: string, max = MAX_TEXT_CHARS) => {
+    if (typeof v !== 'string') throw bad(`${name} must be a string.`);
+    if (v.length > max) throw bad(`${name} is too long (at most ${max.toLocaleString('en-US')} characters).`);
     return v;
   };
   let request: LLMRequest;
@@ -45,7 +47,7 @@ export function validateCallBody(body: unknown): LLMCallBody {
     request = {
       kind: 'scoped',
       commandId: str(r.commandId, 'commandId', 100),
-      instruction: str(r.instruction, 'instruction', 4000),
+      instruction: str(r.instruction, 'instruction', MAX_INSTRUCTION_CHARS),
       selection: str(r.selection, 'selection'),
       contextBefore: str(r.contextBefore, 'contextBefore'),
       contextAfter: str(r.contextAfter, 'contextAfter'),
@@ -53,11 +55,12 @@ export function validateCallBody(body: unknown): LLMCallBody {
     };
     if (request.selection.trim().length === 0) throw bad('selection is empty.');
   } else if (r.kind === 'chat') {
-    if (!Array.isArray(r.messages) || r.messages.length === 0 || r.messages.length > 200) throw bad('messages must be a non-empty array.');
+    if (!Array.isArray(r.messages) || r.messages.length === 0 || r.messages.length > MAX_CHAT_MESSAGES) throw bad(`messages must be a non-empty array of at most ${MAX_CHAT_MESSAGES}.`);
     const messages: ChatMessage[] = r.messages.map((m: unknown) => {
       const mm = m as Record<string, unknown>;
       if (mm.role !== 'user' && mm.role !== 'assistant') throw bad('message role must be user or assistant.');
-      return { role: mm.role, content: str(mm.content, 'message content', 20_000) };
+      // Assistant answers in the baseline can contain the whole document, so messages get the document limit.
+      return { role: mm.role, content: str(mm.content, 'message content') };
     });
     request = { kind: 'chat', document: str(r.document, 'document'), messages };
   } else {
@@ -88,30 +91,33 @@ export async function completeLLM(call: LLMCallBody, uiKey: string | undefined, 
   const messages = call.request.kind === 'scoped' ? buildScopedMessages(call.request) : buildChatMessages(call.request);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  const timeoutError = () =>
+    new LLMError(504, { error: `The LLM provider did not answer within ${Math.round(config.timeoutMs / 1000)} s.`, code: 'timeout' });
   let response: Response;
+  let payload: unknown = null;
   try {
-    response = await (config.fetchImpl ?? fetch)(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    const aborted = err instanceof Error && err.name === 'AbortError';
-    throw new LLMError(aborted ? 504 : 502, {
-      error: aborted ? `The LLM provider did not answer within ${Math.round(config.timeoutMs / 1000)} s.` : 'Could not reach the LLM provider (network error).',
-      code: aborted ? 'timeout' : 'network',
-    });
+    try {
+      response = await (config.fetchImpl ?? fetch)(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw timeoutError();
+      throw new LLMError(502, { error: 'Could not reach the LLM provider (network error).', code: 'network' });
+    }
+    // The timeout also covers reading the body: a provider can send headers and then stall.
+    try {
+      payload = await response.json();
+    } catch {
+      if (controller.signal.aborted) throw timeoutError();
+      payload = null;
+    }
   } finally {
     clearTimeout(timer);
   }
 
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
   if (!response.ok) {
     const providerMsg = extractProviderError(payload);
     if (response.status === 401 || response.status === 403) {
