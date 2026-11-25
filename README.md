@@ -2,6 +2,8 @@
 
 **Direct manipulation for multi-user, AI-assisted document editing.**
 
+**Live demo:** [open Collaborative DirectGPT](https://collaborative-directgpt.onrender.com/#/collab?session=ift6077-demo&task=sandbox&condition=direct&provider=mock). Everyone opens the same link and types their own name to join. It may take about a minute to wake up the first time.
+
 Collaborative DirectGPT is a research prototype for the IFT 6077 (Human-AI Interaction) project
 *"Collaborative DirectGPT: Direct Manipulation for Multi-User AI-Assisted Document Editing"* by
 **Vishwa Anilkumar Kachhadiya** and **Shivam Mayurbhai Ardeshna** (Université de Montréal).
