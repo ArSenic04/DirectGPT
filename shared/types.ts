@@ -139,6 +139,24 @@ export interface SavedCommand {
   createdAt: number;
 }
 
+/** A teammate's thumbs-up/down ("none" retracts it) or short comment on a pending AI suggestion. */
+export type VoteValue = 'up' | 'down';
+
+export interface ReviewEntry {
+  id: string;
+  requestId: string;
+  kind: 'vote' | 'comment';
+  participantId: string;
+  name: string;
+  /** The author's presence colour, so votes and comments are attributed visually. */
+  color: string;
+  /** For votes: the choice, or "none" to take it back. */
+  value?: VoteValue | 'none';
+  /** For comments: the text. */
+  text?: string;
+  at: number;
+}
+
 export type LogEventType =
   | 'session_join'
   | 'session_leave'
@@ -157,6 +175,9 @@ export type LogEventType =
   | 'revert'
   | 'overlap_warning'
   | 'command_saved'
+  | 'review_vote'
+  | 'review_comment'
+  | 'approval_setting'
   | 'chat_message'
   | 'chat_response'
   | 'chat_error'
@@ -248,6 +269,8 @@ export interface SessionMeta {
   taskStartedBy?: string;
   taskEndedAt?: number;
   taskEndedBy?: string;
+  /** Shared room setting: the requester needs majority approval from teammates before Accept. */
+  requireApproval?: boolean;
 }
 
 export interface QuestionnaireResponse {

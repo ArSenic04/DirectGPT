@@ -218,3 +218,17 @@
 .cdg-invite { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
 .cdg-invite .cdg-code { display: block; margin-top: 6px; word-break: break-all; }
 a.cdg-btn { text-decoration: none; display: inline-block; }
+
+/* Group review of AI suggestions */
+.cdg-review { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--cdg-border, #e5e7eb); }
+.cdg-review-votes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cdg-vote-on { background: #e0e7ff; border-color: #6366f1; font-weight: 600; }
+.cdg-voters { display: inline-flex; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.cdg-voter { display: inline-flex; align-items: center; gap: 3px; }
+.cdg-approval { font-size: 12px; background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; }
+.cdg-approval-met { background: #dcfce7; color: #166534; }
+.cdg-comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.cdg-comment-form { display: flex; gap: 6px; }
+.cdg-comment-form .cdg-input { flex: 1; min-width: 0; }
+.cdg-approval-toggle { display: block; margin-bottom: 6px; }
+.cdg-review-history { font-size: 12px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }

@@ -4,12 +4,14 @@
  * AI edits.
  */
 import { useState } from 'react';
-import type { AIRequestRecord, RequestStatus } from '../../../shared/types';
+import type { AIRequestRecord, RequestStatus, ReviewEntry } from '../../../shared/types';
+import { commentsFor, tally } from '../../../shared/reviews';
 import { DiffView } from './DiffView';
 import { MockBadge, StatusBadge, formatTime } from './StatusBadge';
 
 interface Props {
   requests: AIRequestRecord[];
+  reviews: ReviewEntry[];
   myId: string;
   nameOf: (participantId: string) => string;
   onRevert: (id: string, force?: boolean) => void;
@@ -27,7 +29,7 @@ const FILTERS: Array<{ id: 'all' | RequestStatus; label: string }> = [
   { id: 'reverted', label: 'Reverted' },
 ];
 
-export function HistoryPanel({ requests, myId, nameOf, onRevert, onFocus, revertConflicts, disabled }: Props) {
+export function HistoryPanel({ requests, reviews, myId, nameOf, onRevert, onFocus, revertConflicts, disabled }: Props) {
   const [filter, setFilter] = useState<'all' | RequestStatus>('all');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const list = [...requests].reverse().filter((r) => filter === 'all' || r.status === filter || (filter === 'pending' && r.status === 'generating'));
@@ -45,6 +47,9 @@ export function HistoryPanel({ requests, myId, nameOf, onRevert, onFocus, revert
       {list.map((r) => {
         const version = r.applied ? { text: r.applied.text } : r.versions[r.activeVersion];
         const isOpen = open[r.id] ?? false;
+        const votes = tally(reviews, r.id, r.requester.participantId);
+        const notes = commentsFor(reviews, r.id);
+        const hasReview = votes.up.length + votes.down.length + notes.length > 0;
         return (
           <div key={r.id} className="cdg-history-item" data-testid="history-item" data-request-id={r.id} data-status={r.status}>
             <button className="cdg-history-summary" onClick={() => setOpen({ ...open, [r.id]: !isOpen })} aria-expanded={isOpen}>
@@ -62,12 +67,32 @@ export function HistoryPanel({ requests, myId, nameOf, onRevert, onFocus, revert
               {r.applied?.conflictOverride && <> · <strong>applied over a conflict</strong></>}
               {r.revertedAt !== undefined && <> · reverted by {nameOf(r.revertedBy ?? '')} at {formatTime(r.revertedAt)}</>}
               {r.versions.length > 1 && <> · {r.versions.length} versions</>}
+              {hasReview && (
+                <span data-testid="history-review-summary">
+                  {' '}· group review: 👍 {votes.up.length} 👎 {votes.down.length}
+                  {notes.length > 0 && <>, {notes.length} comment{notes.length === 1 ? '' : 's'}</>}
+                </span>
+              )}
               {r.versions[0]?.provider === 'mock' && <> <MockBadge /></>}
             </div>
             {isOpen && (
               <div className="cdg-history-body">
                 {version ? <DiffView before={r.applied ? r.applied.beforeText : r.originalText} after={version.text} /> : <div className="cdg-muted">No suggestion was produced.</div>}
                 {r.error && <div className="cdg-error">{r.error}</div>}
+                {hasReview && (
+                  <div className="cdg-review-history" data-testid="history-review">
+                    {[...votes.up, ...votes.down].sort((a, b) => a.at - b.at).map((v) => (
+                      <div key={v.participantId}>
+                        <span className="cdg-dot" style={{ background: v.color }} /> {v.name} {v.value === 'up' ? '👍' : '👎'}
+                      </div>
+                    ))}
+                    {notes.map((c) => (
+                      <div key={c.id}>
+                        <span className="cdg-dot" style={{ background: c.color }} /> <strong>{c.name}</strong>: {c.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div className="cdg-history-actions">

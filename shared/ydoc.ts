@@ -13,6 +13,8 @@ import type {
   LogEventType,
   QuestionnaireResponse,
   Requester,
+  ReviewEntry,
+  VoteValue,
   SavedCommand,
   SessionMeta,
   SuggestionVersion,
@@ -37,6 +39,8 @@ export interface RoomParts {
   meta: Y.Map<unknown>;
   commands: Y.Array<SavedCommand>;
   questionnaires: Y.Array<QuestionnaireResponse>;
+  /** Teammates' votes and comments on AI suggestions (append-only, so concurrent voters never overwrite each other). */
+  reviews: Y.Array<ReviewEntry>;
   /** Everyone who has joined the room (any number of participants), keyed by participant id. */
   participants: Y.Map<RosterEntry>;
 }
@@ -49,6 +53,7 @@ export function roomParts(doc: Y.Doc): RoomParts {
     meta: doc.getMap<unknown>('meta'),
     commands: doc.getArray<SavedCommand>('commands'),
     questionnaires: doc.getArray<QuestionnaireResponse>('questionnaires'),
+    reviews: doc.getArray<ReviewEntry>('reviews'),
     participants: doc.getMap<RosterEntry>('participants'),
   };
 }
@@ -519,4 +524,38 @@ export function saveCommand(doc: Y.Doc, cmd: Omit<SavedCommand, 'id' | 'createdA
 
 export function submitQuestionnaire(doc: Y.Doc, response: QuestionnaireResponse): void {
   doc.transact(() => roomParts(doc).questionnaires.push([plain(response)]), ORIGIN_META);
+}
+
+// ---------------------------------------------------------------- group review (votes, comments, approval setting)
+
+export interface ReviewAuthor {
+  participantId: string;
+  name: string;
+  color: string;
+}
+
+export function castVote(doc: Y.Doc, requestId: string, by: ReviewAuthor, value: VoteValue | 'none', now: number = Date.now()): ReviewEntry {
+  const entry: ReviewEntry = { id: makeId('rv'), requestId, kind: 'vote', ...by, value, at: now };
+  doc.transact(() => roomParts(doc).reviews.push([plain(entry)]), ORIGIN_META);
+  return entry;
+}
+
+export function addComment(doc: Y.Doc, requestId: string, by: ReviewAuthor, text: string, maxChars: number, now: number = Date.now()): ReviewEntry | null {
+  const clean = text.replace(/\s+/g, ' ').trim().slice(0, maxChars);
+  if (!clean) return null;
+  const entry: ReviewEntry = { id: makeId('rv'), requestId, kind: 'comment', ...by, text: clean, at: now };
+  doc.transact(() => roomParts(doc).reviews.push([plain(entry)]), ORIGIN_META);
+  return entry;
+}
+
+export function listReviews(doc: Y.Doc): ReviewEntry[] {
+  return roomParts(doc).reviews.toArray().map((e) => ({ ...e }));
+}
+
+export function setRequireApproval(doc: Y.Doc, on: boolean): void {
+  doc.transact(() => roomParts(doc).meta.set('requireApproval', on), ORIGIN_META);
+}
+
+export function requireApproval(doc: Y.Doc): boolean {
+  return roomParts(doc).meta.get('requireApproval') === true;
 }

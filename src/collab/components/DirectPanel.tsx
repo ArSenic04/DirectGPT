@@ -4,9 +4,10 @@
  * collaborators), a custom instruction box, and the suggestion cards.
  */
 import { useState } from 'react';
-import type { AIRequestRecord, SavedCommand, ScopeKind } from '../../../shared/types';
+import type { AIRequestRecord, ReviewEntry, SavedCommand, ScopeKind } from '../../../shared/types';
 import { BUILTIN_COMMANDS, TONES, toneCommand, type CommandDefinition } from '../../../shared/commands';
 import type { AnchorCheck } from '../../../shared/anchors';
+import type { ApprovalStatus } from '../../../shared/reviews';
 import { PreviewCard, type RequestActions } from './PreviewCard';
 import { MAX_INSTRUCTION_CHARS } from '../../../shared/prompts';
 
@@ -27,6 +28,10 @@ interface Props {
   myId: string;
   liveCheck: (r: AIRequestRecord) => AnchorCheck | null;
   actions: RequestActions;
+  reviews: ReviewEntry[];
+  approvalFor: (r: AIRequestRecord) => ApprovalStatus;
+  requireApproval: boolean;
+  onToggleApproval: (on: boolean) => void;
   onCommand: (command: CommandDefinition, typedChars: number) => void;
   onExpand: (unit: 'sentence' | 'paragraph') => void;
   onSaveCommand: (label: string, instruction: string) => void;
@@ -142,6 +147,16 @@ export function DirectPanel(props: Props) {
 
       <section className="cdg-section cdg-section-grow">
         <div className="cdg-section-title">3 · Review suggestions</div>
+        <label className="cdg-small cdg-approval-toggle" title="When on, a suggestion can only be accepted after most of the teammates who are online gave it a thumbs-up. Applies to everyone in this session.">
+          <input
+            type="checkbox"
+            data-testid="require-approval"
+            checked={props.requireApproval}
+            disabled={!enabled}
+            onChange={(e) => props.onToggleApproval(e.target.checked)}
+          />{' '}
+          Require majority approval before Accept
+        </label>
         {activeRequests.length === 0 && <div className="cdg-empty">Suggestions appear here before anything changes in the shared document.</div>}
         {[...mine, ...others].map((r) => (
           <PreviewCard
@@ -151,6 +166,9 @@ export function DirectPanel(props: Props) {
             isMine={r.requester.participantId === myId}
             actions={props.actions}
             disabled={!enabled}
+            reviews={props.reviews}
+            approval={props.approvalFor(r)}
+            myId={myId}
           />
         ))}
       </section>

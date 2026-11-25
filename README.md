@@ -4,6 +4,8 @@
 
 **Live demo:** [open Collaborative DirectGPT](https://collaborative-directgpt.onrender.com/#/collab?session=ift6077-demo&task=sandbox&condition=direct&provider=mock). Everyone opens the same link and types their own name to join. It may take about a minute to wake up the first time.
 
+**Course connections:** [docs/COURSE_CONNECTIONS.md](docs/COURSE_CONNECTIONS.md) maps each IFT 6077 concept (direct manipulation, instrumental interaction, reification, Norman's gulfs, human control, shared awareness) to a feature, and describes the **group review** feature: teammates vote and comment on each AI suggestion, and a session can require majority approval before Accept.
+
 Collaborative DirectGPT is a research prototype for the IFT 6077 (Human-AI Interaction) project
 *"Collaborative DirectGPT: Direct Manipulation for Multi-User AI-Assisted Document Editing"* by
 **Vishwa Anilkumar Kachhadiya** and **Shivam Mayurbhai Ardeshna** (Université de Montréal).
@@ -13,7 +15,8 @@ picks a **command** (or types an instruction), **previews** the AI's suggestion 
 Accepted edits sync to every collaborator and go into a shared **history**. The history records who requested each
 edit, who approved it, and its status, and anyone can **revert** an edit from there. If a collaborator edits the
 selected text while a suggestion is pending, the request is **flagged as a conflict**. The edit is then not applied
-silently over the collaborator's work.
+silently over the collaborator's work. Teammates can also **vote 👍/👎 and comment** on a pending suggestion, and an optional
+session setting requires majority approval before the requester can accept.
 
 The project is a fork of, and builds on, **[DirectGPT](https://github.com/m-damien/DirectGPT)**
 (Masson, Malacria, Casiez & Vogel, CHI 2024, [10.1145/3613904.3642462](https://doi.org/10.1145/3613904.3642462)).
@@ -342,8 +345,8 @@ to the document in these cases. The key is never written to logs, exports, the r
 ## Tests
 
 ```bash
-npm test             # 117 unit tests (Vitest)
-npm run test:e2e     # 13 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
+npm test             # 124 unit tests (Vitest)
+npm run test:e2e     # 15 end-to-end tests (Playwright, Chromium, 2 to 11 isolated browser contexts each)
 ```
 
 - **Unit tests** (`tests/`) cover:
@@ -375,6 +378,10 @@ npm run test:e2e     # 13 end-to-end tests (Playwright, Chromium, 2 to 11 isolat
   `e2e/robustness.spec.ts`:
   12. A second tab of the same participant does not interrupt the first tab's AI request; reloading the requesting tab reports the request as interrupted.
   13. Typing just before leaving is still logged as a manual edit, before `session_leave`.
+
+  `e2e/review.spec.ts` (group review):
+  14. Teammates vote 👍/👎 and comment on a pending suggestion; everyone sees who voted; the requester sees the votes; votes and comments are kept in history and in the export.
+  15. *Require majority approval*: Accept waits for the group, is waived when alone, follows changed votes, and the setting is shared.
 
   Every e2e test also fails if the browser logs any console error or uncaught exception.
 

@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import type { AIRequestRecord, LLMCallBody, LogEvent, Participant, QuestionnaireResponse, SavedCommand, SessionMeta } from '../../shared/types';
+import type { AIRequestRecord, LLMCallBody, LogEvent, Participant, QuestionnaireResponse, ReviewEntry, SavedCommand, SessionMeta } from '../../shared/types';
+import { approvalStatus, MAX_COMMENT_CHARS, tally, commentsFor } from '../../shared/reviews';
 import { ACTIVE_STATUSES, CONDITION_LABELS } from '../../shared/types';
 import type { TaskDefinition } from '../../shared/tasks';
 import type { CommandDefinition } from '../../shared/commands';
@@ -15,7 +16,7 @@ import { scoreQuestionnaire } from '../../shared/questionnaire';
 import {
   ORIGIN_AI, ORIGIN_SEED, acceptRequest, addSuggestion, beginRegeneration, createRequest, endTask, failRequest,
   failStaleGenerations, liveCheck, logEvent, makeId, readMeta, refreshConflicts, rejectRequest, revertRequest,
-  saveCommand, selectVersion, startTask, submitQuestionnaire, type LogContext,
+  addComment, castVote, saveCommand, selectVersion, setRequireApproval, startTask, submitQuestionnaire, type LogContext,
 } from '../../shared/ydoc';
 import { useRequests, usePresence, useTextVersion, useYSnapshot, type CollabConnection, type PresenceActivity } from './hooks';
 import { callLLM, LLMClientError } from './llmClient';
@@ -84,8 +85,20 @@ export function Workspace({ conn, params, me, task, room }: Props) {
   const meta = useYSnapshot(parts.meta as unknown as Y.AbstractType<unknown>, () => readMeta(doc)) as SessionMeta | null;
   const savedCommands = useYSnapshot(parts.commands as unknown as Y.AbstractType<unknown>, () => parts.commands.toArray() as SavedCommand[]);
   const questionnaires = useYSnapshot(parts.questionnaires as unknown as Y.AbstractType<unknown>, () => parts.questionnaires.toArray() as QuestionnaireResponse[]);
+  const reviews = useYSnapshot(parts.reviews as unknown as Y.AbstractType<unknown>, () => parts.reviews.toArray() as ReviewEntry[]);
   const events = useYSnapshot(parts.events as unknown as Y.AbstractType<unknown>, () => parts.events.toArray() as LogEvent[]);
   const presence = usePresence(awareness);
+  const approvalRequired = meta?.requireApproval === true;
+  const author = useMemo(() => ({ participantId: me.participantId, name: me.name, color: me.color }), [me.participantId, me.name, me.color]);
+  /** Group approval for a request: votes from the teammates online (everyone but the requester). */
+  const approvalFor = useCallback(
+    (r: AIRequestRecord) => {
+      const others = new Set(presence.map((p) => p.user.participantId));
+      others.delete(r.requester.participantId);
+      return approvalStatus(tally(reviews, r.id, r.requester.participantId), others.size, approvalRequired);
+    },
+    [presence, reviews, approvalRequired],
+  );
   const duplicatePid = presence.some((p) => !p.isLocal && p.user.participantId === me.participantId);
 
   const editorApi = useRef<EditorApi>(null);
@@ -371,6 +384,13 @@ export function Workspace({ conn, params, me, task, room }: Props) {
     () => ({
       accept: (id, force) => {
         const before = requests.find((r) => r.id === id);
+        if (before) {
+          const approval = approvalFor(before);
+          if (!approval.met) {
+            notify('The group has not approved this suggestion yet (majority approval is required).');
+            return;
+          }
+        }
         const res = acceptRequest(doc, id, me.participantId, { force: Boolean(force) });
         if (res.ok) {
           const r = res.record;
@@ -379,6 +399,8 @@ export function Workspace({ conn, params, me, task, room }: Props) {
             requestId: id, versionIndex: r.activeVersion, versions: r.versions.length, conflictOverride: r.applied?.conflictOverride ?? false,
             changedInside: res.changedInside, changedOutside: res.changedOutside, selectionLength: r.applied?.beforeText.length ?? 0,
             suggestionLength: v?.text.length ?? 0, decisionMs: v ? Date.now() - v.createdAt : null,
+            votesUp: tally(reviews, id, r.requester.participantId).up.length, votesDown: tally(reviews, id, r.requester.participantId).down.length,
+            comments: commentsFor(reviews, id).length,
           });
           if (force) log('conflict_resolved', { requestId: id, action: 'override' });
           if (force) log('conflict_override', { requestId: id });
@@ -409,6 +431,18 @@ export function Workspace({ conn, params, me, task, room }: Props) {
       selectVersion: (id, index) => {
         selectVersion(doc, id, index);
       },
+      vote: (id, value) => {
+        const r = requests.find((x) => x.id === id);
+        if (!r || r.requester.participantId === me.participantId || (r.status !== 'pending' && r.status !== 'conflicted')) return;
+        castVote(doc, id, author, value);
+        log('review_vote', { requestId: id, value, requester: r.requester.participantId });
+      },
+      comment: (id, text) => {
+        const r = requests.find((x) => x.id === id);
+        if (!r || (r.status !== 'pending' && r.status !== 'conflicted')) return;
+        const entry = addComment(doc, id, author, text, MAX_COMMENT_CHARS);
+        if (entry) log('review_comment', { requestId: id, length: entry.text?.length ?? 0, requester: r.requester.participantId });
+      },
       focusRequest: (id) => {
         const range = resolved.get(id);
         if (!range) return;
@@ -416,7 +450,15 @@ export function Workspace({ conn, params, me, task, room }: Props) {
         editorApi.current?.focus();
       },
     }),
-    [doc, me.participantId, requests, resolved, log, runLLM, notify],
+    [doc, me.participantId, requests, resolved, log, runLLM, notify, approvalFor, reviews, author],
+  );
+
+  const toggleApproval = useCallback(
+    (on: boolean) => {
+      setRequireApproval(doc, on);
+      log('approval_setting', { requireApproval: on });
+    },
+    [doc, log],
   );
 
   const revert = useCallback(
@@ -623,6 +665,10 @@ export function Workspace({ conn, params, me, task, room }: Props) {
                   myId={me.participantId}
                   liveCheck={live}
                   actions={actions}
+                  reviews={reviews}
+                  approvalFor={approvalFor}
+                  requireApproval={approvalRequired}
+                  onToggleApproval={toggleApproval}
                   onCommand={requestEdit}
                   onExpand={expand}
                   onSaveCommand={onSaveCommand}
@@ -630,6 +676,7 @@ export function Workspace({ conn, params, me, task, room }: Props) {
               ) : (
                 <HistoryPanel
                   requests={requests}
+                  reviews={reviews}
                   myId={me.participantId}
                   nameOf={nameOf}
                   onRevert={revert}

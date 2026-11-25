@@ -3,7 +3,9 @@
  * (Figure 1, steps 5, 6 and 9). Only the requester can decide; collaborators
  * see the same card read-only.
  */
-import type { AIRequestRecord } from '../../../shared/types';
+import type { AIRequestRecord, ReviewEntry } from '../../../shared/types';
+import type { ApprovalStatus } from '../../../shared/reviews';
+import { approvalText, ReviewBox } from './ReviewBox';
 import type { AnchorCheck } from '../../../shared/anchors';
 import { DiffView } from './DiffView';
 import { MockBadge, StatusBadge } from './StatusBadge';
@@ -14,6 +16,8 @@ export interface RequestActions {
   regenerate: (id: string, rebase?: boolean) => void;
   selectVersion: (id: string, index: number) => void;
   focusRequest: (id: string) => void;
+  vote: (id: string, value: 'up' | 'down' | 'none') => void;
+  comment: (id: string, text: string) => void;
 }
 
 interface Props {
@@ -22,9 +26,14 @@ interface Props {
   isMine: boolean;
   actions: RequestActions;
   disabled: boolean;
+  reviews: ReviewEntry[];
+  /** Group approval for this request (see shared/reviews.ts). */
+  approval: ApprovalStatus;
+  myId: string;
 }
 
-export function PreviewCard({ record: r, live, isMine, actions, disabled }: Props) {
+export function PreviewCard({ record: r, live, isMine, actions, disabled, reviews, approval, myId }: Props) {
+  const awaitingGroup = !approval.met;
   const version = r.versions[r.activeVersion];
   const conflictKind = r.status === 'conflicted' ? r.conflict?.kind ?? (live?.state === 'deleted' ? 'deleted' : 'changed') : null;
   const othersChanged = r.status === 'pending' && live !== null && live.state !== 'ok';
@@ -102,6 +111,21 @@ export function PreviewCard({ record: r, live, isMine, actions, disabled }: Prop
         </>
       )}
 
+      {version && (r.status === 'pending' || r.status === 'conflicted') && (
+        <ReviewBox
+          requestId={r.id}
+          requesterId={r.requester.participantId}
+          requesterName={r.requester.name}
+          entries={reviews}
+          myId={myId}
+          approval={approval}
+          open
+          disabled={disabled}
+          onVote={(v) => actions.vote(r.id, v)}
+          onComment={(t) => actions.comment(r.id, t)}
+        />
+      )}
+
       <div className="cdg-card-actions">
         <button className="cdg-btn cdg-btn-ghost cdg-btn-small" onClick={() => actions.focusRequest(r.id)} title="Select this text in the document">
           Show in document
@@ -112,7 +136,7 @@ export function PreviewCard({ record: r, live, isMine, actions, disabled }: Prop
           <>
             <button className="cdg-btn" data-testid="regenerate" disabled={disabled} onClick={() => actions.regenerate(r.id)}>↻ Regenerate</button>
             <button className="cdg-btn cdg-btn-danger" data-testid="reject" disabled={disabled} onClick={() => actions.reject(r.id)}>✕ Reject</button>
-            <button className="cdg-btn cdg-btn-primary" data-testid="accept" disabled={disabled} onClick={() => actions.accept(r.id)}>✓ Accept</button>
+            <button className="cdg-btn cdg-btn-primary" data-testid="accept" disabled={disabled || awaitingGroup} title={awaitingGroup ? approvalText(approval) : undefined} onClick={() => actions.accept(r.id)}>✓ Accept</button>
           </>
         )}
         {isMine && r.status === 'conflicted' && (
@@ -123,7 +147,7 @@ export function PreviewCard({ record: r, live, isMine, actions, disabled }: Prop
                 <button className="cdg-btn" data-testid="regenerate-current" disabled={disabled} onClick={() => actions.regenerate(r.id, true)}>
                   ↻ Regenerate on current text
                 </button>
-                <button className="cdg-btn cdg-btn-warn" data-testid="apply-anyway" disabled={disabled} onClick={() => actions.accept(r.id, true)}>
+                <button className="cdg-btn cdg-btn-warn" data-testid="apply-anyway" disabled={disabled || awaitingGroup} title={awaitingGroup ? approvalText(approval) : undefined} onClick={() => actions.accept(r.id, true)}>
                   Apply anyway
                 </button>
               </>

@@ -1,10 +1,10 @@
 /** Build the JSON/CSV export of a room (used by the server's export endpoint). */
 import * as Y from 'yjs';
-import { listRequests, listRoster, readMeta, roomParts } from './ydoc';
+import { listRequests, listReviews, listRoster, readMeta, roomParts } from './ydoc';
 import { summarizeSession, type SessionSummary } from './metrics';
 import { findTask, targetSpans } from './tasks';
 import { toCsv, type CsvValue } from './csv';
-import type { AIRequestRecord, LogEvent, QuestionnaireResponse, RosterEntry, SessionMeta } from './types';
+import type { AIRequestRecord, LogEvent, QuestionnaireResponse, ReviewEntry, RosterEntry, SessionMeta } from './types';
 import { LIKERT_ITEMS, TLX_SCALES } from './questionnaire';
 
 export const EXPORT_SCHEMA = 'collab-directgpt/session-export@1';
@@ -20,6 +20,8 @@ export interface SessionExport {
   events: LogEvent[];
   requests: Array<Omit<AIRequestRecord, 'anchor' | 'applied'> & { applied?: Omit<NonNullable<AIRequestRecord['applied']>, 'anchor'> }>;
   questionnaires: QuestionnaireResponse[];
+  /** Teammates' votes and comments on AI suggestions. */
+  reviews: ReviewEntry[];
   /** Everyone who joined the room, in join order (any number of participants). */
   roster: RosterEntry[];
 }
@@ -54,6 +56,7 @@ export function buildExport(doc: Y.Doc, room: string, now: Date = new Date()): S
     events,
     requests,
     questionnaires,
+    reviews: listReviews(doc),
     roster,
   };
 }
