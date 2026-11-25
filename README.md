@@ -85,6 +85,50 @@ The first time you run the e2e tests, install the browser with `npx playwright i
 
 ---
 
+## Remote demo
+
+Use this when the two people are in different places (for example Shivam in India and Vishwa in Canada). Everyone
+opens one public `https://` address in a normal browser. Nothing else is installed. The server serves the page and the
+live sync on the same port, so no extra setup is needed. Use the **MOCK** provider unless you set `OPENAI_API_KEY` on
+the server (the key stays on the server and is never sent to the browsers).
+
+**Option A: host on Render (stays up, recommended).** One person does this once:
+
+1. Sign in at https://render.com with GitHub, choose **New + > Blueprint**, pick the `ArSenic04/DirectGPT` repository
+   and the `collaborative-directgpt` branch. It reads `render.yaml` (free plan, build `npm ci && npm run build`, start
+   `npm run serve`).
+2. When it says *Live*, the address is `https://collaborative-directgpt-XXXX.onrender.com`.
+3. The free plan sleeps after about 15 minutes without visitors and takes about a minute to wake up, so open the
+   address a few minutes before the demo. Rooms and history are kept in memory and in a temporary folder: they are lost
+   if the service restarts, so do not rely on them between sessions.
+
+**Option B: run it on one computer with a free tunnel (no account).** Use this if Option A is not set up. The computer
+must stay on and awake during the demo (for example Vishwa's laptop in Canada).
+
+```bash
+npm ci && npm start                                    # terminal 1: http://localhost:1234
+cloudflared tunnel --url http://localhost:1234         # terminal 2: prints https://<words>.trycloudflare.com
+```
+
+Install cloudflared with `brew install cloudflared` (macOS) or from
+https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/. The address changes each
+time you start the tunnel. If the tunnel cannot connect on a restrictive network, add `--protocol http2`.
+
+**Demo steps for two remote people**
+
+1. One person opens `https://<public address>/#/collab?session=demo1&task=sandbox&condition=direct&provider=mock`
+   (use any session name) and sends the same link to the other person.
+2. Each person types their own name on the setup screen and clicks the button to join. Both should see
+   **Live** in the header and each other in the presence list.
+3. Select a sentence, click a command such as *Shorten*. The suggestion appears as a diff preview that both can see;
+   only the requester can **Accept** or **Reject**. Accepted edits appear on both screens and in the **History** tab,
+   where either person can **Revert**.
+4. To show a conflict: person A selects a paragraph and asks for a change; before accepting, person B types inside that
+   paragraph. A's card turns to *conflicted*, and A can regenerate on the current text or apply anyway.
+5. If someone's connection drops, the app shows *Reconnecting*, keeps local edits and syncs them when it comes back.
+
+To check a deployed or tunnelled address from a computer with this repo: `E2E_BASE_URL=https://<address> npx playwright test e2e/collab.spec.ts:20 e2e/collab.spec.ts:121`.
+
 ## How this extends DirectGPT
 
 DirectGPT showed that direct manipulation of visible objects is faster than conversational prompting, and that

@@ -1,0 +1,17 @@
+# One-click host for the remote demo (see "Remote demo" in README.md).
+# Render free web service: serves the built client and the websocket sync on one port.
+services:
+  - type: web
+    name: collaborative-directgpt
+    runtime: node
+    plan: free
+    branch: collaborative-directgpt
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run serve
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: DATA_DIR
+        value: /tmp/collab-data
+      # Optional: add OPENAI_API_KEY in the Render dashboard (never in this file). Without it use the MOCK provider.

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT ?? 4173);
+// E2E_BASE_URL=https://<public url> runs the tests against an already running (remote) server instead of starting one.
+const REMOTE = process.env.E2E_BASE_URL;
 
 export default defineConfig({
   testDir: './e2e',
@@ -11,13 +13,13 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [['list']],
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: REMOTE ?? `http://localhost:${PORT}`,
     ...devices['Desktop Chrome'],
     viewport: { width: 1600, height: 900 },
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { viewport: { width: 1600, height: 900 } } }],
-  webServer: {
+  webServer: REMOTE ? undefined : {
     // Production build served by the real server, with the MOCK LLM and an
     // unreachable OpenAI base URL (to test network-error handling offline).
     command: `npm run build && rm -rf test-results/e2e-data && PORT=${PORT} OPENAI_API_KEY= MOCK_LATENCY_MS=400 DATA_DIR=test-results/e2e-data OPENAI_BASE_URL=http://127.0.0.1:9/v1 npx tsx server/index.ts`,
